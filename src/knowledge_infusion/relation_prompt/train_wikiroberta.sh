@@ -1,8 +1,8 @@
 MODEL="roberta-base"
 TOKENIZER="roberta-base"
-INPUT_DIR="/home/gzcheng/Projects/mop/kg_dir/wikidata5m_alias"
+INPUT_DIR="/home/simon/wikidata5m"
 OUTPUT_DIR="checkpoints"
-DATASET_NAME="wikidata5m_alas"
+DATASET_NAME="wikidata5m"
 ADAPTER_NAMES="entity_predict"
 PARTITION=256
 

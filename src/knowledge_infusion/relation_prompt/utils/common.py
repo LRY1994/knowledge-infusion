@@ -6,7 +6,7 @@ import time
 import zipfile
 from functools import wraps
 
-import metis
+import pymetis as metis
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp

@@ -22,7 +22,7 @@ import wandb
 # from utils.bert_trainer import BertTrainer
 from utils.bert_trainer_prompt import BertTrainer
 from utils.common import print_args_as_table
-from utils.kg_processor import KGProcessor, KGProcessor_rel, KGProcessor_prompt
+from utils.kg_processor import  KGProcessor_prompt
 from model import RelPrompt
 
 # 1. Start a W&B run
@@ -172,7 +172,7 @@ def init_model(args, relid=None):
             ),
         )
         model.add_adapter(
-            args.adapter_names, config=adapter_config
+            args.adapter_names, AdapterType.text_task, config=adapter_config
         )
         model.train_adapter([args.adapter_names])
     model.to(device)
