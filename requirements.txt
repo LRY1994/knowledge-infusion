@@ -11,7 +11,7 @@ pip install pytorch_metric_learning
 
 conda install pytorch=1.7.0 torchvision torchaudio cudatoolkit=11.3 -c pytorch
 
-04742632c4bee2219ed17367f6ec9e6b859e59b2
+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
 
 cd /knowledge-infusion/src/knowledge_infusion/relation_prompt
 ./train_wikiroberta.sh

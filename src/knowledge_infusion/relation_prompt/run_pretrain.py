@@ -154,9 +154,7 @@ def init_model(args, relid=None):
     ):
         from_tf = True
     config = AutoConfig.from_pretrained(args.model)
-    # model = AutoModel.from_pretrained(
-    #     args.model, from_tf=from_tf, config=config
-    # )
+    
     model = RelPrompt.from_pretrained(
         args.model, config=config, rel=relid, devices=args.device
     )
