@@ -1,92 +1,175 @@
-# BART version of closed-book QA
+# Can-PLM-Serve-as-KB-for-CBQA
 
-This is a BART version of sequence-to-sequence model for open-domain QA in a closed-book setup, based on [PyTorch](https://pytorch.org/) and [Huggingface's Transformers](https://github.com/huggingface/transformers).
+This folder contains the original code and data for ACL2021 paper *<Can Generative Pre-trained Language Models Serve asKnowledge Bases for Closed-book QA?>*
 
-The model is a sequence-to-sequence model that takes a question as an input and outputs the answer, without reading any external resource (e.g. passages).
-Please refer to [Roberts et al., 2020, How Much Knowledge Can You Pack Into the Parameters of a Language Model?](https://arxiv.org/abs/2002.08910) to learn more about closed-book QA setup and the original model based on T5. Their code and model checkpoints are available [here](https://github.com/google-research/google-research/tree/master/t5_closed_book_qa).
+Paper link:https://arxiv.org/abs/2106.01561
 
-The model is based on BART-large. Please refer to [Lewis et al., ACL 2020, BART: Denoising Sequence-to-Sequence Pre-training for Natural Language Generation, Translation, and Comprehension](https://arxiv.org/abs/1910.13461) to learn more about BART.
-
-We experiment with Natural Questions open-domain data (NQ-open), but the code should work on any QA data with question-answer pairs.
-
-
-## Requirement
-
-This code is tested on Python 3.6.9.
-
-Install PyTorch and Transformers:
-```
-pip install torch==1.1.0
-pip install git+https://github.com/huggingface/transformers.git@7b75aa9fa55bee577e2c7403301ed31103125a35
+## Setup
+```bash
+git clone https://github.com/wangcunxiang/Can-PLM-Serve-as-KB-for-CBQA.git && cd simpletransformers
+pip install -e ./
+pip install -r requirements-dev.txt
+pip install transformers==3.5.0
 ```
 
-Download NQ-open data:
+## dataset
+Download dataset from https://drive.google.com/file/d/1K2uw9WXct6kA8i6_taJWeETGj2OdqgC1/view?usp=sharing
+
+Our used data is from open source datasets, including [NaturalQuestions](https://ai.google.com/research/NaturalQuestions/), [TriviaQA](http://nlp.cs.washington.edu/triviaqa/), [WebQuestion](https://worksheets.codalab.org/worksheets/0xba659fe363cb46e7a505c5b6a774dc8a) and [SQuAD2.0](https://rajpurkar.github.io/SQuAD-explorer/). We split the development set of the
+NaturalQuestions, TriviaQA and SQuAD2.0 and the test set of WebQuestion into two subsets to serve as a new development set and a new test set(Dec 2020). And
+we extract several subsets from SQuAD2.0 to serve as our new datasets,Among which articles are used as pre-training data, and questions and answers are used as QA dataset(Dec 2020). There is no additional data collection process.
+
+You can read Dataset.md for details of datasets.
+
+## command
+
+
+
+Followings are simple example commands, you can read the description of each command argument for more details.
+### LM-tuning
+Example training command for LM-tuning
+
+```bash
+MODEL_PATH=facebook/bart-large
+DATA_PATH=/* YOUR_DATA_PATH */
+OUTPUT_DIR=/* YOUR_OUTPUT_DIRECTORY */
+
+CUDA_VISIBLE_DEVICES=0 python train_generate_qa.py \
+--data_dir $DATA_PATH \
+--model_type seq2seq \
+--model_name_or_path $MODEL_PATH \
+--output_dir $OUTPUT_DIR \
+--do_train \
+--max_seq_length 512 \
+--max_length 512 \
+--train_batch_size 1 \
+--gradient_accumulation_steps 4 \
+--mask_ratio 0.3 \
+--save_step 500 \
+--overwrite_output_dir \
+--num_train_epochs 200 \
+--predict_on_valid \
+--evaluation_metric passage
 ```
-chmod +x download_data.sh; ./download_data.sh
+Example testing command for LM-tuning
+```bash
+MODEL_PATH=/* YOUR_LM-TUNED_MODEL_PATH */
+DATA_PATH=/* YOUR_DATA_PATH */
+PREDICTION_DIR=/* YOUR_PREDICTION_DIRECTORY */
+
+CUDA_VISIBLE_DEVICES=0 python train_generate_qa.py \
+--data_dir $DATA_PATH \
+--model_type seq2seq \
+--model_name_or_path $MODEL_PATH \
+--prediction_dir $PREDICTION_DIR \
+--do_predict \
+--max_seq_length 512 \
+--max_length 512 \
+--train_batch_size 1 \
+--gradient_accumulation_steps 8 \
+--save_step 500 \
+--overwrite_output_dir \
+--evaluation_metric passage
 ```
 
-## Training
+### QA-tuning
+Example training command for QA-tuning
+```bash
+MODEL_PATH=/* YOUR_LM-TUNED_MODEL_PATH */
+DATA_PATH=/* YOUR_DATA_PATH */
+OUTPUT_DIR=/* YOUR_OUTPUT_DIRECTORY */
+MAX_SEQ_LENGTH=64
+MAX_LENGTH=64
+TRAIN_BATCH_SIZE=8
 
-```
-python cli.py --do_train --output_dir out/nq-bart-closed-qa \
-        --train_file data/nqopen-train.json \
-        --predict_file data/nqopen-dev.json \
-        --train_batch_size ${train_bs} \
-        --predict_batch_size ${test_bs} \
-        --append_another_bos
-```
-
-The script will save the log and the best checkpoint inside `out/nq-bart-closed-qa`.
-
-
-Other useful commands (please refer to `cli.py` for the full list):
-- `eval_period`: interval to evaluate on the dev data
-- `verbose`: print a progress bar
-- `debug`: train and evaluate on a subset of the dev data for debugging purposes
-
-You can use `train_batch_size` and `predict_batch_size` depending on the gpu availability. With one 16GB gpu, you can use `train_batch_size=64, predict_batch_size=64`.
-Our model that we reports the result below was trained with `train_batch_size=1024, predict_batch_size 256` using eight 32GB gpus. Training took roughly 34 hours.
-
-Note:
-- This script saves the pre-tokenized data in `data/` once question-answer pairs are tokenized for the first time.
-- The model gives the best result when prepending extra BOS token (`--append_another_bos`).
-- Inference on multi-gpus is not working for now; we will update the code once it is fixed.
-
-## Inference
-
-```
-python cli.py --do_predict --output_dir out/nq-bart-closed-qa \
-        --predict_file data/nqopen-dev.json \
-        --predict_batch_size ${test_bs} \
-        --append_another_bos --prefix dev_
-python cli.py --do_predict --output_dir out/nq-bart-closed-qa \
-        --predict_file data/nqopen-test.json \
-        --predict_batch_size ${test_bs} \
-        --append_another_bos --prefix test_
+CUDA_VISIBLE_DEVICES=1 python train_generate_qa.py \
+--model_type seq2seq \
+--data_dir ${DATASET} \
+--model_name_or_path $MODEL_PATH \
+--output_dir $OUTPUT_DIR \
+--do_train \
+--max_seq_length $MAX_SEQ_LENGTH \
+--max_length $MAX_LENGTH \
+--train_batch_size $TRAIN_BATCH_SIZE \
+--save_step 500 \
+--num_train_epochs 30 \
+--dataloader_num_workers 0 \
+--overwrite_output_dir \
+--predict_on_valid \
+--gradient_accumulation_steps 4 \
+--evaluation_metric qa
 ```
 
-It will save the prediction file as `out/nq-bart-closed-qa/{dev|test}_predictions.json`.
+Example testing command for QA-tuning
+```bash
+MODEL_PATH=/* YOUR_LM-TUNED_MODEL_PATH */
+DATA_PATH=/* YOUR_DATA_PATH */
+OUTPUT_DIR=/* YOUR_OUTPUT_DIRECTORY */
+PREDICTION_DIR=/* YOUR_PREDICTION_DIRECTORY */
+MAX_SEQ_LENGTH=64
+MAX_LENGTH=64
+TRAIN_BATCH_SIZE=8
 
-## Result
+CUDA_VISIBLE_DEVICES=1 python train_generate_qa.py \
+--model_type seq2seq \
+--data_dir ${DATASET} \
+--model_name_or_path $MODEL_PATH \
+--prediction_dir $PREDICTION_DIR \
+--max_seq_length $MAX_SEQ_LENGTH \
+--max_length $MAX_LENGTH \
+--train_batch_size $TRAIN_BATCH_SIZE \
+--save_step 500 \
+--num_train_epochs 30 \
+--dataloader_num_workers 0 \
+--overwrite_output_dir \
+--do_predict \
+--gradient_accumulation_steps 4 \
+--evaluation_metric qa
+```
+### Frequently Asked Questions and Answers
 
-The final Exact Match score we get is 25.05 on the dev data and 24.10 on the test data.
+It will continue to be updated on this page.  So please feel free to ask us questions through any channels.
 
-We made the best model checkpoint and the predictions on the dev/test data available.
+Q0: Can you describe this work briefly?
+A0: Some works have proved PLMs can contain knowledge in their parameters. We want to know whether PLMs can learn knowledge through pretraining and whether PLMs can use their internal knowledge to solve problems. So we first continue pretrain (LM-finetune) the PLM with some passages and ask the PLM to recite the passages. Then, we QA-finetune the model and ask it to answer questions which relates the passages. The results show that the PLMs cannot memorize much knowledge through pretraining and it is weak of them to use internal knowledge to answer questions after finetuning.
 
-- [Best checkpoint + Dev/Test prediction (1.8G)][1]
-- [Dev/test predictions only (228K)][2]
+Q1: What is your conclusion?
+A1: The results show that the PLMs cannot memorize much knowledge through pretraining and it is weak of them to use internal knowledge to answer questions after finetuning. So, it is difficult to use PLMs as KBs in current Pre-training -$>$ Fine-tuning paradigm.
 
-Note that T5-based model gets 27.0, 29.8, 32.1 and 34.5 on the test set with Base, Large, 3B and 11B, respectively, based on [the original paper](https://arxiv.org/pdf/2002.08910.pdf). Several factors could lead to the performance gaps: (i) T5 has a larger number of parameters and trained on a larger set of data and (ii) the original paper includes the dev data for training, whereas our codebase only trains the model on the train data and uses the dev data for choosing the best checkpoint.
-We also did not perform any hyperparamter tuning, as our goal is to provide the basic codebase rather than to achieve the best possible performance; we leave it for the future work.
+Q2: Why you randomly mask tokens during LM-finetuning while mask specific tokens during reciting?
+A2: For LM-finetuning, we want to explore whether PLMs can learn knowledge from pretraining. So, we set LM-finetuning the same with original pretraining process, which randomly mask tokens. For reciting, we want to link this process to the subsequent QA process, therefore, we can naturally compare the reciting accuracy and QA accuracy.
 
-Note: that the original paper includes ablations that exclude supervised data for T5 pretraining, and reports comparable (or better) numbers: see Appendix C of [the original paper](https://arxiv.org/pdf/2002.08910.pdf) for the details!
+Q3: Why don't you split train/dev/test set during knowledge memorization experiments?
+A3: We don't think it makes sense to ask the model to learn some passages and then ask it to recite others.
 
-## Contact
+Q4: If you do XXX things (e.g. Using more refined mask policy) in knowledge memorization/question answering, it will improve the accuracy in reciting/QA, why do not you do these?
+A4: Our approach is based on the most classic Pre-training -$>$ Fine-tuning paradigm. We suppose it is more valuable to use the most popular and standard paradigm when researching on this question. In addition, some methods may improve accuracy on both tasks, but we suppose it will affect the conclusion too much, after all, current results are far away from indicating strong abilities of knowledge memorizing and question answering.
 
-Please email [Sewon Min](https://shmsw25.github.io) or write a Github issue for any question.
+Q5: Does this paper concludes that PLMs cannot serve as knowledge bases?
+A5: Yes and no. If you simply use the Pre-training -$>$ Fine-tuning paradigm, we suppose it will not work. However, if you optimize the paradigm, we suppose it is still promising to research on this topic because PLMs can indeed store and utilize knowledge. 
+
+Q6: Can the conclusion of this paper also apply to other downstream tasks? Why you choose Closed-book QA as the representative task?
+A6: We suppose the conclusion is very likely the same with other downstream tasks. We choose Closed-book QA is because it is most direct and suitable task for explore why how much knowledge can models have, we have also considered other tasks, but none of them is as suitable as Closed-book QA.
 
 
-[1]: http://nlp.cs.washington.edu/ambigqa/models/nq-bart-closed-qa/nq-bart-closed-qa.zip
-[2]: http://nlp.cs.washington.edu/ambigqa/models/nq-bart-closed-qa/predictions.zip
+### Citation
+If you find this paper useful, you can cite
 
+```
+@inproceedings{wang-etal-2021-generative,
+    title = "Can Generative Pre-trained Language Models Serve As Knowledge Bases for Closed-book {QA}?",
+    author = "Wang, Cunxiang  and
+      Liu, Pai  and
+      Zhang, Yue",
+    booktitle = "Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers)",
+    month = aug,
+    year = "2021",
+    address = "Online",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2021.acl-long.251",
+    doi = "10.18653/v1/2021.acl-long.251",
+    pages = "3241--3251",
+    abstract = "Recent work has investigated the interesting question using pre-trained language models (PLMs) as knowledge bases for answering open questions. However, existing work is limited in using small benchmarks with high test-train overlaps. We construct a new dataset of closed-book QA using SQuAD, and investigate the performance of BART. Experiments show that it is challenging for BART to remember training facts in high precision, and also challenging to answer closed-book questions even if relevant knowledge is retained. Some promising directions are found, including decoupling the knowledge memorizing process and the QA finetune process, forcing the model to recall relevant knowledge when question answering.",
+}
 
+```
