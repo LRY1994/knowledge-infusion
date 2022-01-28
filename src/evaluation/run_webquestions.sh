@@ -3,8 +3,8 @@ DATASET="WebQuestions"
 # NaturalQuestions
 # SQuAD2
 
-MODEL_DIR="../../../../model_dir/"
-DATA_DIR="../../../../../data/BLURB/data/BioASQ/" 
+MODEL_DIR="../train_adpter/relation_prompt/checkpoints/"
+DATA_DIR="../data/WebQuestions/" 
 BASE_MODEL="facebook/bart-base"
 MODEL="WebQuestions"
 T=1

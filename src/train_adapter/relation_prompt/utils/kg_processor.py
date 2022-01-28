@@ -23,6 +23,7 @@ class KGProcessor_prompt(BertProcessor):
         sub_set=1,
         name="Node Prediction With Partition",
         n_partition=50,
+        triple_per_relation=5000,
         bi_direction=True,
         sub_group_idx=None,
         shuffle_rate=None,
@@ -31,6 +32,7 @@ class KGProcessor_prompt(BertProcessor):
         self.id2ent = {}
         self.id2rel = {}
         self.n_partition = n_partition
+        self.triple_per_relation = triple_per_relation
         self.sub_set = sub_set
        
         self.tri_file = os.path.join(data_dir, "wikidata5m_transductive_train.txt")
@@ -143,7 +145,7 @@ class KGProcessor_prompt(BertProcessor):
         self.top_rel = self.sample_triple(self.n_partition)
         print([self.id2rel[r] for r in self.top_rel])
         self.triple_list = {r: self.triple_list[r] for r in self.top_rel}
-        tri_per_rel = 5000
+        tri_per_rel = self.triple_per_relation ###
         import random
         self.triple_list = {k: random.sample(v, tri_per_rel)  if len(v) > tri_per_rel else v  for (k, v) in self.triple_list.items()}
 
@@ -174,6 +176,6 @@ class KGProcessor_prompt(BertProcessor):
             )
         self.examples_cache[group_idx] = examples
         print(
-            f"Get {len(examples)} examples of {self.NAME} datasets from partition {group_idx}/{self.n_partition} set"
+            f"Get {len(examples)} examples of {self.NAME} datasets from partition '{text_r}' {group_idx}/{self.n_partition} set"
         )
         return examples

@@ -177,9 +177,9 @@ def init_model(args, relid=None):
         model = torch.nn.DataParallel(model)
 
     param_optimizer = list(model.named_parameters())
-    for n, p in param_optimizer:
-        if p.requires_grad:
-            print(n)
+    # for n, p in param_optimizer:
+    #     if p.requires_grad:
+    #         print(n)
     no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"]
     optimizer_grouped_parameters = [
         {
@@ -254,6 +254,7 @@ if __name__ == "__main__":
         args.input_dir,
         args.subset,
         n_partition=args.n_partition,
+        triple_per_relation=args.triple_per_relation,
         bi_direction=args.bi_direction,
         sub_group_idx=args.sub_group_idx,
         shuffle_rate=args.shuffle_rate,

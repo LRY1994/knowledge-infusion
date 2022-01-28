@@ -126,7 +126,8 @@ class BertTrainer(object):
         )
         print(f"Start Training on group_idx {group_idx}")
         self.train(tokenized_features, group_idx)
-
+    
+    # train_subgraph->train_epoch->train
     def train_subgraph(self, group_idx):
         def collate_fn_batch_encoding(batch):
             batch_text = [example.text_e for example in batch]
