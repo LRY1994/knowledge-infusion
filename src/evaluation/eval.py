@@ -223,7 +223,7 @@ def prepare_opt_sch(model, args):
     return optimizer, scheduler
 
 
-def load_fusion_adapter_model(args):
+def load_fusion_adapter_model(args,base_model):
     """Load fusion adapter model.
 
     Args:
@@ -233,7 +233,6 @@ def load_fusion_adapter_model(args):
         [type]: [description]
     """
     adapter_names_dict = search_adapters(args)
-    base_model = AutoModel.from_pretrained(args.base_model, from_tf=get_tf_flag(args))
     fusion_adapter_rename = []
     for model_path, adapter_names in adapter_names_dict.items():
         for adapter_name in adapter_names:

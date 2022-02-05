@@ -25,3 +25,4 @@ python eval.py \
 --epochs 25 \
 --temperature $T \
 --cuda
+
