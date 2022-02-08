@@ -142,6 +142,7 @@ def search_adapters(args):
         model_path = args.model_dir + args.model
         adapter_paths = [f for f in listdir(model_path)]
         print(f"Found {len(adapter_paths)} adapter paths")
+        # model_path父目录, adapter_paths adpter.json
         adapter_paths = check_adapter_names(model_path, adapter_paths)
         adapter_paths_dic[model_path] = adapter_paths
     return adapter_paths_dic
@@ -323,8 +324,8 @@ if __name__ == "__main__":
             config = AutoConfig.from_pretrained(args.model)
             model = AutoModel.from_pretrained(args.model, from_tf=get_tf_flag(args))
 
-        model.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
-        model.classifier = torch.nn.Linear(config.hidden_size, 2)
+        # model.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
+        # model.classifier = torch.nn.Linear(config.hidden_size, 2)
 
         model.to(device)
         if n_gpu > 1:
@@ -334,24 +335,30 @@ if __name__ == "__main__":
         print("Training Model")
         trainer = BertTrainer(model, optimizer, processor, scheduler, tokenizer, args)
         trainer.train()
+
+        # 只取最好的
         print("Evaluating Model")
         model = torch.load(args.best_model_dir + "model.bin")
+
         train_result = evaluate_split(model, processor, tokenizer, args, split="train")
         train_result[0]["run_num"] = i
         wandb.log(train_result[0])  # Record Dev Result
         train_acc_list.append(train_result[0]["train_accuracy"])
+
         dev_result = evaluate_split(model, processor, tokenizer, args, split="dev")
         dev_result[0]["run_num"] = i
         wandb.log(dev_result[0])  # Record Dev Result
         dev_acc_list.append(dev_result[0]["dev_accuracy"])
+
         test_result = evaluate_split(model, processor, tokenizer, args, split="test")
         test_result[0]["run_num"] = i
         wandb.log(test_result[0])  # Record Testing Result
         test_acc_list.append(test_result[0]["test_accuracy"])
+
         if (
             test_result[0]["test_accuracy"] < 0.86
         ):  # keep the models with excellent performance
-            shutil.rmtree(args.best_model_dir)
+            shutil.rmtree(args.best_model_dir)#递归地删除文件
         else:
             print(f"Saving model to {args.best_model_dir}.")
             print(f"test_accuracy of {test_result[0]['test_accuracy']}.")
