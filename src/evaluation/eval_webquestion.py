@@ -20,12 +20,12 @@ from transformers import (
 from transformers import get_linear_schedule_with_warmup as WarmupLinearSchedule
 
 import wandb
-from .utils.bart_evaluator import BartEvaluator
-from .utils.bart_trainer import BartTrainer
-from evaluation.utils.data_processor import DataProcessor
+from utils.bert_evaluator import BertEvaluator
+from utils.bert_trainer import BertTrainer
+from utils.bioasq_processor import BioAsqProcessor
 from utils.common_utils import print_args_as_table
 
-wandb.init(project="webquestion")
+wandb.init(project="BioAsq_7b")
 
 
 def get_args():
@@ -95,7 +95,7 @@ def get_args():
 
 
 def evaluate_split(model, processor, tokenizer, args, split="dev"):
-    evaluator = BartEvaluator(model, processor, tokenizer, args, split, True)
+    evaluator = BertEvaluator(model, processor, tokenizer, args, split, True)
     result = evaluator.get_scores(silent=True)
     split_result = {}
     for k, v in result[0].items():
@@ -142,6 +142,7 @@ def search_adapters(args):
         model_path = args.model_dir + args.model
         adapter_paths = [f for f in listdir(model_path)]
         print(f"Found {len(adapter_paths)} adapter paths")
+        # model_path父目录, adapter_paths adpter.json
         adapter_paths = check_adapter_names(model_path, adapter_paths)
         adapter_paths_dic[model_path] = adapter_paths
     return adapter_paths_dic
@@ -223,7 +224,7 @@ def prepare_opt_sch(model, args):
     return optimizer, scheduler
 
 
-def load_fusion_adapter_model(args):
+def load_fusion_adapter_model(args,base_model):
     """Load fusion adapter model.
 
     Args:
@@ -233,7 +234,6 @@ def load_fusion_adapter_model(args):
         [type]: [description]
     """
     adapter_names_dict = search_adapters(args)
-    base_model = AutoModel.from_pretrained(args.base_model, from_tf=get_tf_flag(args))
     fusion_adapter_rename = []
     for model_path, adapter_names in adapter_names_dict.items():
         for adapter_name in adapter_names:
@@ -288,13 +288,14 @@ if __name__ == "__main__":
     args.batch_size = args.batch_size // args.gradient_accumulation_steps
     args.device = device
     args.n_gpu = n_gpu
-   
+    args.num_labels = BioAsqProcessor.NUM_CLASSES
+    args.is_multilabel = BioAsqProcessor.IS_MULTILABEL
     args.best_model_dir = f"./temp/model_{timestamp_str}/"
     # Record config on wandb
     wandb.config.update(args)
     print_args_as_table(args)
 
-    processor = DataProcessor(args.data_dir)
+    processor = BioAsqProcessor(args.data_dir)
     if args.tokenizer is None:
         args.tokenizer = args.base_model
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
@@ -319,7 +320,7 @@ if __name__ == "__main__":
             # args.base_model will be a folder of a pre-trained model
             config, model = load_adapter_model(args)
         elif args.train_mode == "base":
-            # use base bart model
+            # use base bert model
             config = AutoConfig.from_pretrained(args.model)
             model = AutoModel.from_pretrained(args.model, from_tf=get_tf_flag(args))
 
@@ -332,26 +333,32 @@ if __name__ == "__main__":
         optimizer, scheduler = prepare_opt_sch(model, args)
 
         print("Training Model")
-        trainer = BartTrainer(model, optimizer, processor, scheduler, tokenizer, args)
+        trainer = BertTrainer(model, optimizer, processor, scheduler, tokenizer, args)
         trainer.train()
+
+        # 只取最好的
         print("Evaluating Model")
         model = torch.load(args.best_model_dir + "model.bin")
+
         train_result = evaluate_split(model, processor, tokenizer, args, split="train")
         train_result[0]["run_num"] = i
         wandb.log(train_result[0])  # Record Dev Result
         train_acc_list.append(train_result[0]["train_accuracy"])
+
         dev_result = evaluate_split(model, processor, tokenizer, args, split="dev")
         dev_result[0]["run_num"] = i
         wandb.log(dev_result[0])  # Record Dev Result
         dev_acc_list.append(dev_result[0]["dev_accuracy"])
+
         test_result = evaluate_split(model, processor, tokenizer, args, split="test")
         test_result[0]["run_num"] = i
         wandb.log(test_result[0])  # Record Testing Result
         test_acc_list.append(test_result[0]["test_accuracy"])
+
         if (
             test_result[0]["test_accuracy"] < 0.86
         ):  # keep the models with excellent performance
-            shutil.rmtree(args.best_model_dir)
+            shutil.rmtree(args.best_model_dir)#递归地删除文件
         else:
             print(f"Saving model to {args.best_model_dir}.")
             print(f"test_accuracy of {test_result[0]['test_accuracy']}.")
