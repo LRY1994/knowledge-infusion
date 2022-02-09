@@ -1,11 +1,11 @@
-MODEL_PATH='../train_adpter/relation_prompt/checkpoints/'
-DATA_PATH="../data/WebQuestions/" 
-OUTPUT_DIR="./output/WebQuestions/" 
+MODEL_PATH='../../train_adpter/relation_prompt/checkpoints/'
+DATA_PATH="../../datasets/WebQuestion/" 
+OUTPUT_DIR="./output/WebQuestion/" 
 MAX_SEQ_LENGTH=64
 MAX_LENGTH=64
 TRAIN_BATCH_SIZE=8
 BASE_MODEL="facebook/bart-base"
-MODEL="WebQuestions"
+MODEL="WebQuestion"
 T=1
 LR=1e-5
 TRAIN_MODE="fusion"

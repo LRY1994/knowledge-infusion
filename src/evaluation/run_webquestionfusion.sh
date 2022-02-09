@@ -1,12 +1,12 @@
-DATASET="WebQuestions"
+DATASET="WebQuestion"
 # TriviaQA
 # NaturalQuestions
 # SQuAD2
 
 MODEL_DIR="../train_adpter/relation_prompt/checkpoints/"
-DATA_DIR="../data/WebQuestions/" 
+DATA_DIR="../datasets/WebQuestions/" 
 BASE_MODEL="facebook/bart-base"
-MODEL="WebQuestions"
+MODEL="WebQuestion"
 T=1
 LR=1e-5
 TRAIN_MODE="fusion"

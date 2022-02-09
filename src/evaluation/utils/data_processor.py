@@ -21,19 +21,33 @@ def load_bioasq(args):
 
 
 class DataProcessor(BertProcessor):
-    NAME = "BioAsq"
+    NAME = "webquestion"
     
 
     def __init__(self, args):
         self.train_df, self.dev_df, self.test_df = load_bioasq(args)
 
     def get_train_examples(self):
-        return self.train_df
+        return self._create_examples(self.train_df, set_type="train")
 
     def get_dev_examples(self):
-        return self.dev_df
+        return self._create_examples(self.dev_df, set_type="dev")
 
     def get_test_examples(self):
-        return self.test_df
+        return   self._create_examples(self.test_df, set_type="test")
 
-    
+    def _create_examples(self, data_df, set_type):
+        examples = []
+        
+        for (i, row) in data_df.iterrows():
+            prefix = row["prefix"]
+            input_text = row["input_text"]
+            target_text = row["target_text"]
+            
+            examples.append(
+                InputExample(prefix=prefix, input_text=input_text, target_text=target_text)
+            )
+        print(
+            f"Get {len(examples)} examples of {self.NAME} datasets for {set_type} set"
+        )
+        return examples
