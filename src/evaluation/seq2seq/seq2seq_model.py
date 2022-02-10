@@ -463,6 +463,8 @@ class Seq2SeqModel:
             scaler = amp.GradScaler()
 
         model.train()
+        
+        # train_epoch
         for current_epoch in train_iterator:
             if epochs_trained > 0:
                 epochs_trained -= 1
@@ -939,162 +941,6 @@ class Seq2SeqModel:
         else:
             return outputs
 
-    # def predict(self, pred_data, output_dir=None, suffix=None, verbose=True, silent=False):
-    #     """
-    #     Performs predictions on a list of text.
-    #
-    #     Args:
-    #         pred_data: Pandas DataFrame containing the 2 columns - `input_text`, `target_text`.
-    #                     - `input_text`: The input text sequence.
-    #                     - `target_text`: The target text sequence.
-    #         output_dir: The directory where predictition results files will be saved. If not given, self.args.output_dir will be used.
-    #         suffix: The supplementary suffix of prediction results name.
-    #
-    #     Returns:
-    #         preds: A python list of the generated sequences.
-    #     """  # noqa: ignore flake8"
-    #
-    #     model= self.model
-    #     args = self.args
-    #
-    #     pred_dataset = self.load_and_cache_examples(pred_data, evaluate=True, verbose=verbose, silent=silent)
-    #     pred_sampler = SequentialSampler(pred_dataset)
-    #     pred_dataloader = DataLoader(pred_dataset, sampler=pred_sampler, batch_size=self.args.eval_batch_size)
-    #
-    #     target_predict = pred_data["target_text"].tolist()
-    #
-    #
-    #     self._move_model_to_device()
-    #
-    #     if not output_dir:
-    #         output_dir = self.args.output_dir
-    #
-    #     self._move_model_to_device()
-    #
-    #     os.makedirs(output_dir, exist_ok=True)
-    #     if self.args.fp16:
-    #         from torch.cuda import amp
-    #
-    #     all_inputs = []
-    #     all_outputs = []
-    #     # Batching
-    #     for batch in tqdm(pred_dataloader, desc='Predicting', disable=self.args.silent, mininterval=0,):
-    #         input_ids = self._get_inputs_dict(batch)['input_ids']
-    #         # if self.args.model_type == "marian":
-    #         #     input_ids = self.encoder_tokenizer.prepare_translation_batch(
-    #         #         batch,
-    #         #         max_length=self.args.max_seq_length,
-    #         #         padding=True,
-    #         #         return_tensors="pt",
-    #         #         truncation=True,
-    #         #     )["input_ids"]
-    #         # else:
-    #         #     input_ids = self.encoder_tokenizer.batch_encode_plus(
-    #         #         batch,
-    #         #         max_length=self.args.max_seq_length,
-    #         #         padding=True,
-    #         #         return_tensors="pt",
-    #         #         truncation=True,
-    #         #     )["input_ids"]
-    #         # input_ids = input_ids.to(self.device)
-    #         # with torch.no_grad():
-    #         #     if self.args.fp16:
-    #         #         with amp.autocast():
-    #         #             outputs = model(**input_ids)
-    #         #             loss = outputs[0]
-    #         #     else:
-    #         #         outputs = model(**input_ids)
-    #         #         loss = outputs[0]
-    #         if self.args.model_type in ["bart", "marian"]:
-    #             outputs = self.model.generate(
-    #                 input_ids=input_ids,
-    #                 num_beams=self.args.num_beams,
-    #                 max_length=self.args.max_length,
-    #                 length_penalty=self.args.length_penalty,
-    #                 early_stopping=self.args.early_stopping,
-    #                 repetition_penalty=self.args.repetition_penalty,
-    #                 do_sample=self.args.do_sample,
-    #                 top_k=self.args.top_k,
-    #                 top_p=self.args.top_p,
-    #                 num_return_sequences=self.args.num_return_sequences,
-    #             )
-    #         else:
-    #             outputs = self.model.generate(
-    #                 input_ids=input_ids,
-    #                 decoder_start_token_id=self.model.config.decoder.pad_token_id,
-    #                 num_beams=self.args.num_beams,
-    #                 max_length=self.args.max_length,
-    #                 length_penalty=self.args.length_penalty,
-    #                 early_stopping=self.args.early_stopping,
-    #                 repetition_penalty=self.args.repetition_penalty,
-    #                 do_sample=self.args.do_sample,
-    #                 top_k=self.args.top_k,
-    #                 top_p=self.args.top_p,
-    #                 num_return_sequences=self.args.num_return_sequences,
-    #             )
-    #
-    #         all_inputs.extend(input_ids.cpu().numpy())
-    #         all_outputs.extend(outputs.cpu().numpy())
-    #
-    #     if self.args.use_multiprocessed_decoding:
-    #         self.model.to("cpu")
-    #         with Pool(self.args.process_count) as p:
-    #             inputs = list(
-    #                 tqdm(
-    #                     p.imap(self._decode, all_inputs, chunksize=self.args.multiprocessing_chunksize),
-    #                     total=len(all_inputs),
-    #                     desc="Decoding outputs",
-    #                     disable=self.args.silent,
-    #                 )
-    #             )
-    #             outputs = list(
-    #                 tqdm(
-    #                     p.imap(self._decode, all_outputs, chunksize=self.args.multiprocessing_chunksize),
-    #                     total=len(all_outputs),
-    #                     desc="Decoding outputs",
-    #                     disable=self.args.silent,
-    #                 )
-    #             )
-    #         self._move_model_to_device()
-    #     else:
-    #         inputs = [
-    #             self.decoder_tokenizer.decode(input_id, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-    #             for input_id in all_inputs
-    #         ]
-    #         outputs = [
-    #             self.decoder_tokenizer.decode(output_id, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-    #             for output_id in all_outputs
-    #         ]
-    #
-    #     output_predication_file = os.path.join(output_dir, "predictions_{}.txt".format(suffix))
-    #     correct_num = 0
-    #     accuracy_list = []
-    #     with open(output_predication_file, "w") as writer:
-    #         writer.write("to_predict\n\toutput\n\ttarget\n")
-    #         for i in range(len(outputs)):
-    #             writer.write(inputs[i]+"\t"+outputs[i]+"\t"+target_predict[i])
-    #             if self.args.evaluation_metric == 'passage':
-    #                 ith_accuracy = self.passage_predict_accuray(inputs[i], outputs[i], target_predict[i], 10)
-    #                 ith_bleu = corpus_bleu(sys_stream=outputs[i], ref_streams=target_predict[i]).score
-    #                 accuracy_list.append(ith_accuracy)
-    #                 print("number :{} accuracy:{} bleu :{}".format(i, ith_accuracy, ith_bleu))
-    #                 writer.write("number :{} accuracy:{} bleu :{} \n".format(i, ith_accuracy, ith_bleu))
-    #             elif self.args.evaluation_metric == 'qa':
-    #                 if outputs[i].strip().lower() == target_predict[i].strip().lower():
-    #                     correct_num += 1
-    #     if self.args.evaluation_metric == 'passage':
-    #         os.rename(output_predication_file,os.path.join(output_dir,"predictions_{}_{}.txt".format(suffix,np.mean(accuracy_list))))
-    #     if self.args.evaluation_metric == 'qa':
-    #         print("correct number: {}, correct ratio: {}".format(correct_num, correct_num/float(len(outputs))))
-    #
-    #
-    #     if self.args.num_return_sequences > 1:
-    #         return [
-    #             outputs[i : i + self.args.num_return_sequences]
-    #             for i in range(0, len(outputs), self.args.num_return_sequences)
-    #         ]
-    #     else:
-    #         return outputs
 
     def _decode(self, output_id):
         return self.decoder_tokenizer.decode(output_id, skip_special_tokens=True, clean_up_tokenization_spaces=True)
@@ -1190,7 +1036,7 @@ class Seq2SeqModel:
             CustomDataset = args.dataset_class
             return CustomDataset(encoder_tokenizer, decoder_tokenizer, args, data, mode)
         else:
-            ###hrere!!!!!
+            ###here!!!!!
             if args.model_type in ["bart", "marian"]:
                 return SimpleSummarizationDataset(encoder_tokenizer, self.args, data, mode)
             else:

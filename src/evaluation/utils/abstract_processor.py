@@ -16,7 +16,7 @@ from transformers import BartTokenizer, BartForConditionalGeneration
 class InputExample(object):
     """A single training/test example for simple sequence classification."""
 
-    def __init__(self, guid, input_text, target_text=None):
+    def __init__(self, input_text, target_text=None):
         """Constructs a InputExample.
 
         Args:
@@ -28,28 +28,20 @@ class InputExample(object):
             label: (Optional) string. The label of the example. This should be
             specified for train and dev examples, but not for test examples.
         """
-        self.guid = guid
-        self.text_a = input_text
-        self.text_b = target_text
+        
+        self.input_text = input_text
+        self.target_text = target_text
        
 
 
 class InputFeatures(object):
     """A single set of features of data."""
 
-    def __init__(self, input_ids, input_mask, segment_ids, label_id):
-        self.input_ids = input_ids
-        self.input_mask = input_mask
-        self.segment_ids = segment_ids
-        self.label_id = label_id
+    def __init__(self, source_ids, source_mask, target_ids):
+        source_ids=source_ids
+        source_mask=source_mask
+        target_ids=target_ids
 
-
-class InputFeaturesText(object):
-    """A single set of features of data."""
-
-    def __init__(self, input_ids, label_id):
-        self.input_ids = input_ids
-        self.label_id = label_id
 
 
 class BertProcessor(object):
@@ -106,7 +98,23 @@ class BertProcessor(object):
                 lines.append(line)
             return lines
 
+def preprocess_data_bart(data):
+    input_text, target_text, tokenizer, args = data
 
+    input_ids = tokenizer.batch_encode_plus(
+        [input_text], max_length=args.max_seq_length, padding='max_length', return_tensors="pt", truncation=True
+    )
+
+    target_ids = tokenizer.batch_encode_plus(
+        [target_text], max_length=args.max_length, padding='max_length', return_tensors="pt", truncation=True
+    )
+
+    return {
+        "source_ids": input_ids["input_ids"].squeeze(),
+        "source_mask": input_ids["attention_mask"].squeeze(),
+        "target_ids": target_ids["input_ids"].squeeze(),
+    }
+    
 def convert_examples_to_features(
     examples, max_seq_length, tokenizer, print_examples=False
 ):
@@ -120,198 +128,16 @@ def convert_examples_to_features(
     """
 
     features = []
+    
     for (ex_index, example) in enumerate(examples):
-        # Replacing new lines with [SEP] tokens
-        input_text = example.input_text.replace("\\n", "[SEP]")
-        tokens_a = tokenizer.tokenize(input_text)
-
-        tokens_b = None
-        if example.input_text:
-            tokens_b = tokenizer.tokenize(example.target_text)
-            # Modifies `tokens_a` and `tokens_b` in place so that the total
-            # length is less than the specified length.
-            # Account for [CLS], [SEP], [SEP] with "- 3"
-            _truncate_seq_pair(tokens_a, tokens_b, max_seq_length - 3)
-        else:
-            # Account for [CLS] and [SEP] with "- 2"
-            if len(tokens_a) > max_seq_length - 2:
-                tokens_a = tokens_a[: (max_seq_length - 2)]
-
-        tokens = ["[CLS]"] + tokens_a + ["[SEP]"]
-        segment_ids = [0] * len(tokens)
-
-        if tokens_b:
-            tokens += tokens_b + ["[SEP]"]
-            segment_ids += [1] * (len(tokens_b) + 1)
-
-        input_ids = tokenizer.convert_tokens_to_ids(tokens)
-
-        # The mask has 1 for real tokens and 0 for padding tokens. Only real
-        # tokens are attended to.
-        input_mask = [1] * len(input_ids)
-
-        # Zero-pad up to the sequence length.
-        padding = [0] * (max_seq_length - len(input_ids))
-        input_ids += padding
-        input_mask += padding
-        segment_ids += padding
-
-        assert len(input_ids) == max_seq_length
-        assert len(input_mask) == max_seq_length
-        assert len(segment_ids) == max_seq_length
-
-        label_id = [float(x) for x in example.label]
-
-        if print_examples and ex_index < 5:
-            print("tokens: %s" % " ".join([str(x) for x in tokens]))
-            print("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-            print("input_mask: %s" % " ".join([str(x) for x in input_mask]))
-            print("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
-            print("label: %s" % example.label)
-
+        tmp = preprocess_data_bart(example)
         features.append(
             InputFeatures(
-                input_ids=input_ids,
-                input_mask=input_mask,
-                segment_ids=segment_ids,
-                label_id=label_id,
+                source_ids=tmp.source_ids,
+                source_mask=tmp.source_mask,
+                target_ids=tmp.target_ids,
             )
         )
     return features
 
 
-def convert_examples_to_features_long(
-    examples, max_seq_length, tokenizer, print_examples=False, model_type="longformer"
-):
-    """
-    Loads a data file into a list of InputBatch objects
-    :param examples:
-    :param max_seq_length:
-    :param tokenizer:
-    :param print_examples:
-    :return: a list of InputBatch objects
-    """
-
-    features = []
-
-    encoded_out = tokenizer.batch_encode_plus(
-        [example.text_a.replace("\\n", "</s>") for example in examples],
-        add_special_tokens=True,
-        max_length=max_seq_length,
-        pad_to_max_length=True,
-        return_token_type_ids=True,
-    )
-
-    input_ids = encoded_out["input_ids"]
-    attention_masks = encoded_out["attention_mask"]
-    segment_ids = encoded_out["token_type_ids"]
-
-    for example, ids, masks, segments in zip(
-        examples, input_ids, attention_masks, segment_ids
-    ):
-
-        if model_type == "longformer":
-            masks[0] = 2
-
-        label_id = [float(x) for x in example.label]
-
-        features.append(
-            InputFeatures(
-                input_ids=ids, input_mask=masks, segment_ids=segments, label_id=label_id
-            )
-        )
-    return features
-
-
-def convert_examples_to_hierarchical_features(
-    examples, max_seq_length, tokenizer, print_examples=False
-):
-    """
-    Loads a data file into a list of InputBatch objects
-    :param examples:
-    :param max_seq_length:
-    :param tokenizer:
-    :param print_examples:
-    :return: a list of InputBatch objects
-    """
-
-    features = []
-    for (ex_index, example) in enumerate(examples):
-        tokens_a = [tokenizer.tokenize(line) for line in sent_tokenize(example.text_a)]
-        tokens_b = None
-
-        if example.text_b:
-            tokens_b = [
-                tokenizer.tokenize(line) for line in sent_tokenize(example.text_b)
-            ]
-            # Modifies `tokens_a` and `tokens_b` in place so that the total length is less than the specified length
-            # Account for [CLS], [SEP], [SEP]
-            _truncate_seq_pair(tokens_a, tokens_b, max_seq_length - 3)
-        else:
-            # Account for [CLS] and [SEP]
-            for i0 in range(len(tokens_a)):
-                if len(tokens_a[i0]) > max_seq_length - 2:
-                    tokens_a[i0] = tokens_a[i0][: (max_seq_length - 2)]
-
-        tokens = [["[CLS]"] + line + ["[SEP]"] for line in tokens_a]
-        segment_ids = [[0] * len(line) for line in tokens]
-
-        if tokens_b:
-            tokens += tokens_b + ["[SEP]"]
-            segment_ids += [1] * (len(tokens_b) + 1)
-
-        input_ids = list()
-        for line in tokens:
-            input_ids.append(tokenizer.convert_tokens_to_ids(line))
-
-        # Input mask has 1 for real tokens and 0 for padding tokens
-        input_mask = [[1] * len(line_ids) for line_ids in input_ids]
-
-        # Zero-pad up to the sequence length.
-        padding = [[0] * (max_seq_length - len(line_ids)) for line_ids in input_ids]
-        for i0 in range(len(input_ids)):
-            input_ids[i0] += padding[i0]
-            input_mask[i0] += padding[i0]
-            segment_ids[i0] += padding[i0]
-
-        label_id = [float(x) for x in example.label]
-
-        if print_examples and ex_index < 5:
-            print("tokens: %s" % " ".join([str(x) for x in tokens]))
-            print("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-            print("input_mask: %s" % " ".join([str(x) for x in input_mask]))
-            print("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
-            print("label: %s" % example.label)
-
-        features.append(
-            InputFeatures(
-                input_ids=input_ids,
-                input_mask=input_mask,
-                segment_ids=segment_ids,
-                label_id=label_id,
-            )
-        )
-    return features
-
-
-def _truncate_seq_pair(tokens_a, tokens_b, max_length):
-    """
-    Truncates a sequence pair in place to the maximum length
-    :param tokens_a:
-    :param tokens_b:
-    :param max_length:
-    :return:
-    """
-
-    # This is a simple heuristic which will always truncate the longer sequence
-    # one token at a time. This makes more sense than truncating an equal percent
-    # of tokens from each, since if one sequence is very short then each token
-    # that's truncated likely contains more information than a longer sequence.
-    while True:
-        total_length = len(tokens_a) + len(tokens_b)
-        if total_length <= max_length:
-            break
-        if len(tokens_a) > len(tokens_b):
-            tokens_a.pop()
-        else:
-            tokens_b.pop()

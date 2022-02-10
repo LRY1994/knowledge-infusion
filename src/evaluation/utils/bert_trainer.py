@@ -18,9 +18,8 @@ class BertTrainer(object):
         self.processor = processor
         self.scheduler = scheduler
         self.tokenizer = tokenizer
-        self.train_examples = self.processor.get_train_examples(
-            args.data_dir, args.train_file
-        )
+        self.device = 'cuda'
+        self.train_examples = self.processor.get_train_examples()
         if args.train_ratio < 1:
             keep_num = int(len(self.train_examples) * args.train_ratio) + 1
             self.train_examples = self.train_examples[:keep_num]
@@ -52,29 +51,43 @@ class BertTrainer(object):
         self.best_dev_acc, self.unimproved_iters = 0, 0
         self.early_stop = False
 
-    def train_epoch(self, train_dataloader):
+    def _get_inputs_dict(self, batch):
+        device = self.device
+        pad_token_id = self.tokenizer.pad_token_id
+        source_ids, source_mask, y = batch["source_ids"], batch["source_mask"], batch["target_ids"]
+        y_ids = y[:, :-1].contiguous()
+        lm_labels = y[:, 1:].clone()
+        lm_labels[y[:, 1:] == pad_token_id] = -100
+
+        inputs = {
+            "input_ids": source_ids.to(device),
+            "attention_mask": source_mask.to(device),
+            "decoder_input_ids": y_ids.to(device),
+            "labels": lm_labels.to(device),
+        }
+        return inputs
+ 
+    def train_epoch(self, train_dataloader,epoch_number):
         self.tr_loss = 0
-        for step, batch in enumerate(tqdm(train_dataloader, desc="Training")):
+
+        batch_iterator = tqdm(
+            train_dataloader,
+            desc=f"Running Epoch {epoch_number} of {self.args.epochs} ",
+            mininterval=0,
+        )
+
+        for step, batch in enumerate(batch_iterator):
             self.model.train()
             batch = tuple(t.to(self.args.device) for t in batch)
-            input_ids, input_mask, segment_ids, label_ids = batch
-            outputs = self.model(
-                input_ids,
-                input_mask,
-                segment_ids,
+            inputs = self._get_inputs_dict(batch)
+            outputs = self.model(**inputs)
+            loss = outputs[0]
+            current_loss = loss.item()
+            
+            batch_iterator.set_description(
+                f"Epochs {epoch_number}/{self.args.epochs}. Running Loss: {current_loss:9.4f}"
             )
-            pooled_output = outputs[1]
-            if isinstance(self.model, torch.nn.DataParallel):
-                pooled_output = self.model.module.dropout(pooled_output)
-                logits = self.model.module.classifier(pooled_output)
-            else:
-                pooled_output = self.model.dropout(pooled_output)
-                logits = self.model.classifier(pooled_output)
 
-            if self.args.is_multilabel:
-                loss = F.binary_cross_entropy_with_logits(logits, label_ids.float())
-            else:
-                loss = F.cross_entropy(logits, torch.argmax(label_ids, dim=1))
 
             if self.args.n_gpu > 1:
                 loss = loss.mean()
@@ -97,35 +110,34 @@ class BertTrainer(object):
         train_features = convert_examples_to_features(
             self.train_examples, self.args.max_seq_length, self.tokenizer
         )
-        unpadded_input_ids = [f.input_ids for f in train_features]
-        unpadded_input_mask = [f.input_mask for f in train_features]
-        unpadded_segment_ids = [f.segment_ids for f in train_features]
-
+      
         print("Number of examples: ", len(self.train_examples))
         print("Batch size:", self.args.batch_size)
         print("Num of steps:", self.num_train_optimization_steps)
 
-        padded_input_ids = torch.tensor(unpadded_input_ids, dtype=torch.long)
-        padded_input_mask = torch.tensor(unpadded_input_mask, dtype=torch.long)
-        padded_segment_ids = torch.tensor(unpadded_segment_ids, dtype=torch.long)
-        label_ids = torch.tensor([f.label_id for f in train_features], dtype=torch.long)
+        source_ids = torch.tensor([f.source_ids for f in train_features], dtype=torch.long)
+        source_mask = torch.tensor([f.source_mask for f in train_features], dtype=torch.long)       
+        target_ids = torch.tensor([f.target_ids for f in train_features], dtype=torch.long)
 
         train_data = TensorDataset(
-            padded_input_ids, padded_input_mask, padded_segment_ids, label_ids
+            source_ids, source_mask, target_ids
         )
 
         train_sampler = RandomSampler(train_data)
         train_dataloader = DataLoader(
-            train_data, sampler=train_sampler, batch_size=self.args.batch_size
+            train_data, 
+            sampler=train_sampler, 
+            batch_size=self.args.batch_size
         )
 
         print("Start Training")
+      
         for epoch in tqdm(range(self.args.epochs), file=sys.stdout, desc="Epoch"):
             self.train_epoch(train_dataloader)
             dev_evaluator = BertEvaluator(
                 self.model, self.processor, self.tokenizer, self.args, split="dev"
             )
-            result = dev_evaluator.get_scores()[0]
+            result = dev_evaluator.get_scores()
 
             # Update validation results
             if result["accuracy"] > self.best_dev_acc:
@@ -142,3 +154,26 @@ class BertTrainer(object):
                         )
                     )
                     break
+    
+    def compute_metrics(self, labels, preds, **kwargs):
+        """
+        Computes the evaluation metrics for the model predictions.
+
+        Args:
+            labels: List of target sequences
+            preds: List of model generated outputs
+            **kwargs: Custom metrics that should be used. Pass in the metrics as keyword arguments (name of metric: function to use).
+                        A metric function should take in two parameters. The first parameter will be the true labels, and the second parameter will be the predictions. Both inputs
+                        will be lists of strings. Note that this will slow down evaluation significantly as the predicted sequences need to be generated.
+
+        Returns:
+            result: Dictionary containing evaluation results.
+        """  # noqa: ignore flake8"
+        # assert len(labels) == len(preds)
+
+        results = {}
+
+        for metric, func in kwargs.items():
+            results[metric] = func(labels, preds)
+
+        return results

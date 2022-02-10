@@ -1,5 +1,5 @@
 import warnings
-
+import os
 import numpy as np
 import pandas as pd
 import torch
@@ -33,25 +33,6 @@ def print_dict_as_table(dic, tag=None, columns=["keys", "values"]):
     return tabulate(df, headers=columns, tablefmt="psql")
 
 
-def hoc_label_combine(predicted_labels, target_labels, sentences_ids):
-    data = {}
-    assert len(predicted_labels) == len(target_labels)
-    assert len(predicted_labels) == len(sentences_ids)
-    for idx, key_id in enumerate(sentences_ids):
-        key = key_id[: key_id.find("_")]
-        if key not in data:
-            data[key] = (np.zeros(10), np.zeros(10))
-        data[key][0][np.nonzero(predicted_labels[idx])] = 1
-        data[key][1][np.nonzero(target_labels[idx])] = 1
-    predicted_labels = []
-    target_labels = []
-    for _, doc in data.items():
-        predicted_labels.append(doc[0])
-        target_labels.append(doc[1])
-    print(
-        f"Collect labels for {len(predicted_labels)} document from {len(sentences_ids)} sentences "
-    )
-    return np.array(predicted_labels), np.array(target_labels)
 
 
 class BertEvaluator(object):
@@ -83,23 +64,41 @@ class BertEvaluator(object):
             )
         self.examples_ids = [example.guid for example in self.eval_examples]
 
+    def _get_inputs_dict(self, batch):
+        device = self.device
+        pad_token_id = self.tokenizer.pad_token_id
+        source_ids, source_mask, y = batch["source_ids"], batch["source_mask"], batch["target_ids"]
+        y_ids = y[:, :-1].contiguous()
+        lm_labels = y[:, 1:].clone()
+        lm_labels[y[:, 1:] == pad_token_id] = -100
+
+        inputs = {
+            "input_ids": source_ids.to(device),
+            "attention_mask": source_mask.to(device),
+            "decoder_input_ids": y_ids.to(device),
+            "labels": lm_labels.to(device),
+        }
+        return inputs
+
     def get_scores(self, silent=False):
+        """
+        Evaluates the model on eval_dataset.
+
+        Utility function to be used by the eval_model() method. Not intended to be used directly.
+        """
+      
         eval_features = convert_examples_to_features(
             self.eval_examples, self.args.max_seq_length, self.tokenizer
         )
 
-        unpadded_input_ids = [f.input_ids for f in eval_features]
-        unpadded_input_mask = [f.input_mask for f in eval_features]
-        unpadded_segment_ids = [f.segment_ids for f in eval_features]
-
-        padded_input_ids = torch.tensor(unpadded_input_ids, dtype=torch.long)
-        padded_input_mask = torch.tensor(unpadded_input_mask, dtype=torch.long)
-        padded_segment_ids = torch.tensor(unpadded_segment_ids, dtype=torch.long)
-        label_ids = torch.tensor([f.label_id for f in eval_features], dtype=torch.long)
+        source_ids = torch.tensor([f.source_ids for f in eval_features], dtype=torch.long)
+        source_mask = torch.tensor([f.source_mask for f in eval_features], dtype=torch.long)       
+        target_ids = torch.tensor([f.target_ids for f in eval_features], dtype=torch.long)
 
         eval_data = TensorDataset(
-            padded_input_ids, padded_input_mask, padded_segment_ids, label_ids
+            source_ids, source_mask, target_ids
         )
+
         eval_sampler = SequentialSampler(eval_data)
         eval_dataloader = DataLoader(
             eval_data, sampler=eval_sampler, batch_size=self.args.batch_size
@@ -107,114 +106,38 @@ class BertEvaluator(object):
 
         self.model.eval()
 
-        total_loss = 0
-        nb_eval_steps, nb_eval_examples = 0, 0
-        predicted_labels, target_labels = list(), list()
+        eval_loss = 0
+        nb_eval_steps = 0
+        results = {}
+       
+        for batch in tqdm( eval_dataloader, desc="Evaluating", disable=silent): 
 
-        for input_ids, input_mask, segment_ids, label_ids in tqdm(
-            eval_dataloader, desc="Evaluating", disable=silent
-        ):
-            input_ids = input_ids.to(self.args.device)
-            input_mask = input_mask.to(self.args.device)
-            segment_ids = segment_ids.to(self.args.device)
-            label_ids = label_ids.to(self.args.device)
-
+            inputs = self._get_inputs_dict(batch)
+          
             with torch.no_grad():
-                outputs = self.model(
-                    input_ids,
-                    input_mask,
-                    segment_ids,
-                )
-                pooled_output = outputs[1]
-                if isinstance(self.model, torch.nn.DataParallel):
-                    pooled_output = self.model.module.dropout(pooled_output)
-                    logits = self.model.module.classifier(pooled_output)
-                else:
-                    pooled_output = self.model.dropout(pooled_output)
-                    logits = self.model.classifier(pooled_output)
-
-            predicted_labels.extend(torch.argmax(logits, dim=1).cpu().detach().numpy())
-            target_labels.extend(torch.argmax(label_ids, dim=1).cpu().detach().numpy())
-            loss = F.cross_entropy(logits, torch.argmax(label_ids, dim=1))
+                outputs = self.model(**inputs)
+                loss = outputs[0]
+                eval_loss += loss.mean().item()
+                
+            loss = outputs[0]
 
             if self.args.n_gpu > 1:
                 loss = loss.mean()
             if self.args.gradient_accumulation_steps > 1:
                 loss = loss / self.args.gradient_accumulation_steps
-            total_loss += loss.item()
-
-            nb_eval_examples += input_ids.size(0)
+            eval_loss += loss.item()         
             nb_eval_steps += 1
 
-        predicted_labels_dict = {}
-        for idx, example_id in enumerate(self.examples_ids):
-            predicted_labels_dict[example_id] = predicted_labels[idx]
-        predicted_labels, target_labels = (
-            np.array(predicted_labels),
-            np.array(target_labels),
-        )
+        
+        eval_loss = eval_loss / nb_eval_steps
+        results["eval_loss"] = eval_loss
 
-        if self.processor.NAME == "HOC" or self.processor.NAME == "Hoc":
-            predicted_labels, target_labels = hoc_label_combine(
-                predicted_labels, target_labels, self.examples_ids
-            )
+        output_eval_file = os.path.join(self.args.output_dir, "eval_results.txt")
+        with open(output_eval_file, "w") as writer:
+            for key in sorted(results.keys()):
+                writer.write("{} = {}\n".format(key, str(results[key])))
 
-        model_str = self.args.model
-        if "/" in model_str:
-            model_str = model_str.split("/")[1]
-        avg_loss = total_loss / nb_eval_steps
-        accuracy = metrics.accuracy_score(target_labels, predicted_labels)
-        result = {
-            "accuracy": accuracy,
-            "avg_loss": avg_loss,
-        }
-        print(metrics.classification_report(target_labels, predicted_labels))
-        if self.args.num_labels == 2:
-            precision = metrics.precision_score(
-                target_labels,
-                predicted_labels,
-            )
-            recall = metrics.recall_score(
-                target_labels,
-                predicted_labels,
-            )
-            f1 = metrics.f1_score(target_labels, predicted_labels, average="micro")
-            binary_result = {
-                "precision": precision,
-                "recall": recall,
-                "f1": f1,
-            }
-            result.update(binary_result)
-        else:
-            macro_precision = metrics.precision_score(
-                target_labels, predicted_labels, average="macro"
-            )
-            macro_recall = metrics.recall_score(
-                target_labels, predicted_labels, average="macro"
-            )
-            macro_f1 = metrics.f1_score(
-                target_labels, predicted_labels, average="macro"
-            )
-            weighted_precision = metrics.precision_score(
-                target_labels, predicted_labels, average="weighted"
-            )
-            weighted_recall = metrics.recall_score(
-                target_labels, predicted_labels, average="weighted"
-            )
-            weighted_f1 = metrics.f1_score(
-                target_labels, predicted_labels, average="weighted"
-            )
-            muticlass_result = {
-                "macro_precision": macro_precision,
-                "macro_recall": macro_recall,
-                "macro_f1": macro_f1,
-                "weighted_precision": weighted_precision,
-                "weighted_recall": weighted_recall,
-                "weighted_f1": weighted_f1,
-            }
-            result.update(muticlass_result)
-
-        return (
-            result,
-            predicted_labels_dict,
-        )
+        return results
+            
+        
+   

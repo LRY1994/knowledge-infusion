@@ -2,59 +2,62 @@ import pandas as pd
 
 from .abstract_processor import BertProcessor, InputExample
 
+def read_data_source_target(file_name_source, file_name_target):
+    file_source = open(file_name_source, 'r', encoding='utf8')
+    file_target = open(file_name_target, 'r', encoding='utf8')
 
-def load_bioasq(file_path):
-    train_df = pd.read_csv(
-        f"{file_path}train.tsv",
-        sep="\t",
-        header=None,
-        names=["id", "text_a", "text_b", "label"],
-    )
-    dev_df = pd.read_csv(
-        f"{file_path}dev.tsv",
-        sep="\t",
-        header=None,
-        names=["id", "text_a", "text_b", "label"],
-    )
-    test_df = pd.read_csv(
-        f"{file_path}test.tsv",
-        sep="\t",
-        header=None,
-        names=["id", "text_a", "text_b", "label"],
-    )
+    source = file_source.readlines()
+    target = file_target.readlines()
+
+    if len(source) != len(target):
+        raise ValueError(
+            "The length of the source file should be equal to target file"
+        )
+    source_target_pair = [[ source[i], target[i]] for i in range(len(source))] # "" for "prefix" used in t5_util.py
+    data_df = pd.DataFrame(source_target_pair, columns=[ "input_text", "target_text"])
+    return data_df
+
+def load_bioasq(args):
+    train_df = read_data_source_target(args.data_dir + "train.source", args.data_dir + "train.target")
+    
+    dev_df = read_data_source_target(args.data_dir + "valid.source", args.data_dir + "valid.target")
+
+    if args.predict_during_training == True:
+        if args.predict_on_valid == True:
+            test_df = read_data_source_target(args.data_dir + "valid.source", args.data_dir + "valid.target")
+        else:
+            test_df = read_data_source_target(args.data_dir + "test.source", args.data_dir + "test.target")
+    else:
+        test_df = None
+
+    test_df =  read_data_source_target(args.data_dir + "test.source", args.data_dir+ "test.target")
     return train_df, dev_df, test_df
 
 
 class BioAsqProcessor(BertProcessor):
-    NAME = "BioAsq"
-    NUM_CLASSES = 2
-    IS_MULTILABEL = False
-
+    NAME = "webquestion"
+    
     def __init__(self, data_dir):
         self.train_df, self.dev_df, self.test_df = load_bioasq(data_dir)
 
-    def get_train_examples(self, data_dir, filename="train.tsv"):
+    def get_train_examples(self):
         return self._create_examples(self.train_df, set_type="train")
 
-    def get_dev_examples(self, data_dir, filename="dev.tsv"):
+    def get_dev_examples(self,):
         return self._create_examples(self.dev_df, set_type="dev")
 
-    def get_test_examples(self, data_dir, filename="test.tsv"):
+    def get_test_examples(self):
         return self._create_examples(self.test_df, set_type="test")
 
     def _create_examples(self, data_df, set_type):
         examples = []
-        label_map = {
-            "yes": "01",
-            "no": "10",
-        }
-        for (i, row) in data_df.iterrows():
-            guid = row["id"]
-            text_a = row["text_a"]
-            text_b = row["text_b"]
-            label = label_map[row["label"]]
+        
+        for (i, row) in data_df.iterrows():           
+            input_text = row["input_text"]
+            target_text = row["target_text"]
+            
             examples.append(
-                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label)
+                InputExample(input_text=input_text, target_text=target_text)
             )
         print(
             f"Get {len(examples)} examples of {self.NAME} datasets for {set_type} set"
