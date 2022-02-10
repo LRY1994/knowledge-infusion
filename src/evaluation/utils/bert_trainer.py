@@ -137,12 +137,12 @@ class BertTrainer(object):
             dev_evaluator = BertEvaluator(
                 self.model, self.processor, self.tokenizer, self.args, split="dev"
             )
-            result = dev_evaluator.get_scores()
+            result = dev_evaluator.get_scores()[0]
 
             # Update validation results
-            if result["accuracy"] > self.best_dev_acc:
+            if result["correct_ratio"] > self.best_dev_acc:
                 self.unimproved_iters = 0
-                self.best_dev_acc = result["accuracy"]
+                self.best_dev_acc = result["correct_ratio"]
                 torch.save(self.model, self.args.best_model_dir + "model.bin")
             else:
                 self.unimproved_iters += 1
@@ -155,25 +155,3 @@ class BertTrainer(object):
                     )
                     break
     
-    def compute_metrics(self, labels, preds, **kwargs):
-        """
-        Computes the evaluation metrics for the model predictions.
-
-        Args:
-            labels: List of target sequences
-            preds: List of model generated outputs
-            **kwargs: Custom metrics that should be used. Pass in the metrics as keyword arguments (name of metric: function to use).
-                        A metric function should take in two parameters. The first parameter will be the true labels, and the second parameter will be the predictions. Both inputs
-                        will be lists of strings. Note that this will slow down evaluation significantly as the predicted sequences need to be generated.
-
-        Returns:
-            result: Dictionary containing evaluation results.
-        """  # noqa: ignore flake8"
-        # assert len(labels) == len(preds)
-
-        results = {}
-
-        for metric, func in kwargs.items():
-            results[metric] = func(labels, preds)
-
-        return results
