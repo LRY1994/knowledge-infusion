@@ -17,20 +17,10 @@ def read_data_source_target(file_name_source, file_name_target):
     data_df = pd.DataFrame(source_target_pair, columns=[ "input_text", "target_text"])
     return data_df
 
-def load_bioasq(args):
-    train_df = read_data_source_target(args.data_dir + "train.source", args.data_dir + "train.target")
-    
-    dev_df = read_data_source_target(args.data_dir + "valid.source", args.data_dir + "valid.target")
-
-    if args.predict_during_training == True:
-        if args.predict_on_valid == True:
-            test_df = read_data_source_target(args.data_dir + "valid.source", args.data_dir + "valid.target")
-        else:
-            test_df = read_data_source_target(args.data_dir + "test.source", args.data_dir + "test.target")
-    else:
-        test_df = None
-
-    test_df =  read_data_source_target(args.data_dir + "test.source", args.data_dir+ "test.target")
+def load_bioasq(data_dir):
+    train_df = read_data_source_target(data_dir + "train.source", data_dir + "train.target")   
+    dev_df = read_data_source_target(data_dir + "dev.source", data_dir + "dev.target")
+    test_df =  read_data_source_target(data_dir + "test.source", data_dir+ "test.target")
     return train_df, dev_df, test_df
 
 

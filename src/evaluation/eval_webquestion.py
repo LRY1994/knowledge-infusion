@@ -25,7 +25,7 @@ from utils.bert_trainer import BertTrainer
 from utils.bioasq_processor import BioAsqProcessor
 from utils.common_utils import print_args_as_table
 
-wandb.init(project="BioAsq_7b")
+wandb.init(project="webquestion")
 
 
 def get_args():
@@ -188,7 +188,7 @@ def prepare_opt_sch(model, args):
     Returns:
         [type]: [description]
     """
-    train_examples = processor.get_train_examples(args.data_dir, args.train_file)
+    train_examples = processor.get_train_examples()
     num_train_optimization_steps = (
         int(len(train_examples) / args.batch_size / args.gradient_accumulation_steps)
         * args.epochs
@@ -288,8 +288,7 @@ if __name__ == "__main__":
     args.batch_size = args.batch_size // args.gradient_accumulation_steps
     args.device = device
     args.n_gpu = n_gpu
-    args.num_labels = BioAsqProcessor.NUM_CLASSES
-    args.is_multilabel = BioAsqProcessor.IS_MULTILABEL
+    
     args.best_model_dir = f"./temp/model_{timestamp_str}/"
     # Record config on wandb
     wandb.config.update(args)
@@ -320,12 +319,11 @@ if __name__ == "__main__":
             # args.base_model will be a folder of a pre-trained model
             config, model = load_adapter_model(args)
         elif args.train_mode == "base":
-            # use base bert model
-            config = AutoConfig.from_pretrained(args.model)
-            model = AutoModel.from_pretrained(args.model, from_tf=get_tf_flag(args))
+            # use base bart model
+            config = AutoConfig.from_pretrained(args.base_model)
+            model = AutoModel.from_pretrained(args.base_model, from_tf=get_tf_flag(args))
 
-        # model.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
-        # model.classifier = torch.nn.Linear(config.hidden_size, 2)
+        
 
         model.to(device)
         if n_gpu > 1:

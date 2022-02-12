@@ -4,14 +4,16 @@ DATASET="WebQuestion"
 # SQuAD2
 
 MODEL_DIR="../train_adpter/relation_prompt/checkpoints/"
-DATA_DIR="../datasets/WebQuestions/" 
-BASE_MODEL="facebook/bart-base"
+DATA_DIR="../datasets/WebQuestion/splitted/" 
+BASE_MODEL="facebook/bart-large"
 MODEL="WebQuestion"
 T=1
 LR=1e-5
-TRAIN_MODE="fusion"
+# TRAIN_MODE="fusion"
+TRAIN_MODE="base"
+
     
-python eval.py \
+python eval_webquestion.py \
 --train_mode $TRAIN_MODE \
 --model_dir $MODEL_DIR \
 --data_dir $DATA_DIR  \
