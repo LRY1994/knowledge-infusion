@@ -3,12 +3,20 @@ import sys
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, RandomSampler, TensorDataset
+from torch.utils.data import DataLoader, RandomSampler, TensorDataset, Dataset
 from tqdm import tqdm
+import pandas as pd
 
 from .abstract_processor import convert_examples_to_features
 from .bert_evaluator import BertEvaluator
 
+class MyDataset(Dataset):
+    def __init__(self, data):
+        self.data = data
+    def __getitem__(self, idx):
+        return self.data[idx]
+    def __len__(self):
+        return(len(self.data))
 
 class BertTrainer(object):
     def __init__(self, model, optimizer, processor, scheduler, tokenizer, args):
@@ -78,7 +86,7 @@ class BertTrainer(object):
 
         for step, batch in enumerate(batch_iterator):
             self.model.train()
-            batch = tuple(t.to(self.args.device) for t in batch)
+           
             inputs = self._get_inputs_dict(batch)
             outputs = self.model(**inputs)
             loss = outputs[0]
@@ -115,13 +123,17 @@ class BertTrainer(object):
         print("Batch size:", self.args.batch_size)
         print("Num of steps:", self.num_train_optimization_steps)
 
-        source_ids = torch.tensor([f.source_ids for f in train_features], dtype=torch.long)
-        source_mask = torch.tensor([f.source_mask for f in train_features], dtype=torch.long)       
-        target_ids = torch.tensor([f.target_ids for f in train_features], dtype=torch.long)
+        source_ids = torch.cat([f.source_ids for f in train_features],dim=0)
+        # source_ids = [f.source_ids for f in train_features]
 
-        train_data = TensorDataset(
-            source_ids, source_mask, target_ids
-        )
+        source_mask = torch.cat([f.source_mask for f in train_features], dim=0)       
+        target_ids = torch.cat([f.target_ids for f in train_features], dim=0)
+
+        # train_data = TensorDataset(
+        #     source_ids, source_mask, target_ids
+        # )
+        train_df=pd.DataFrame({'source_ids':source_ids, 'source_mask':source_mask, 'target_ids':target_ids})
+        train_data=MyDataset(train_df)
 
         train_sampler = RandomSampler(train_data)
         train_dataloader = DataLoader(
@@ -133,7 +145,7 @@ class BertTrainer(object):
         print("Start Training")
       
         for epoch in tqdm(range(self.args.epochs), file=sys.stdout, desc="Epoch"):
-            self.train_epoch(train_dataloader)
+            self.train_epoch(train_dataloader,self.args.epochs)
             dev_evaluator = BertEvaluator(
                 self.model, self.processor, self.tokenizer, self.args, split="dev"
             )

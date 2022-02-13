@@ -38,9 +38,9 @@ class InputFeatures(object):
     """A single set of features of data."""
 
     def __init__(self, source_ids, source_mask, target_ids):
-        source_ids=source_ids
-        source_mask=source_mask
-        target_ids=target_ids
+        self.source_ids=source_ids
+        self.source_mask=source_mask
+        self.target_ids=target_ids
 
 
 
@@ -98,15 +98,16 @@ class BertProcessor(object):
                 lines.append(line)
             return lines
 
-def preprocess_data_bart(data):
-    input_text, target_text, tokenizer, args = data
+def preprocess_data_bart(data,tokenizer,max_seq_length):
+    input_text = data.input_text
+    target_text = data.target_text
 
     input_ids = tokenizer.batch_encode_plus(
-        [input_text], max_length=args.max_seq_length, padding='max_length', return_tensors="pt", truncation=True
+        [input_text], max_length=max_seq_length, padding='max_length', return_tensors="pt", truncation=True
     )
 
     target_ids = tokenizer.batch_encode_plus(
-        [target_text], max_length=args.max_length, padding='max_length', return_tensors="pt", truncation=True
+        [target_text], max_length=max_seq_length, padding='max_length', return_tensors="pt", truncation=True
     )
 
     return {
@@ -130,12 +131,12 @@ def convert_examples_to_features(
     features = []
     
     for (ex_index, example) in enumerate(examples):
-        tmp = preprocess_data_bart(example)
+        tmp = preprocess_data_bart(example,tokenizer,max_seq_length)
         features.append(
             InputFeatures(
-                source_ids=tmp.source_ids,
-                source_mask=tmp.source_mask,
-                target_ids=tmp.target_ids,
+                source_ids=tmp['source_ids'],
+                source_mask=tmp['source_mask'],
+                target_ids=tmp['target_ids'],
             )
         )
     return features
