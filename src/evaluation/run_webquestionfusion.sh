@@ -21,7 +21,7 @@ python eval_webquestion.py \
 --tokenizer $BASE_MODEL  \
 --model $MODEL  \
 --max_seq_length 512   \
---batch_size 8 \
+--batch_size 4 \
 --lr $LR   \
 --pretrain_epoch 0 \
 --epochs 25 \

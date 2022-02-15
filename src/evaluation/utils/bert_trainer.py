@@ -6,17 +6,10 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, RandomSampler, TensorDataset, Dataset
 from tqdm import tqdm
 import pandas as pd
-
+from torch import Tensor, nn
 from .abstract_processor import convert_examples_to_features
 from .bert_evaluator import BertEvaluator
-
-class MyDataset(Dataset):
-    def __init__(self, data):
-        self.data = data
-    def __getitem__(self, idx):
-        return self.data[idx]
-    def __len__(self):
-        return(len(self.data))
+from transformers.modeling_bart import shift_tokens_right
 
 class BertTrainer(object):
     def __init__(self, model, optimizer, processor, scheduler, tokenizer, args):
@@ -61,22 +54,37 @@ class BertTrainer(object):
 
     def _get_inputs_dict(self, batch):
         device = self.device
-        pad_token_id = self.tokenizer.pad_token_id
-        source_ids, source_mask, y = batch["source_ids"], batch["source_mask"], batch["target_ids"]
-        y_ids = y[:, :-1].contiguous()
-        lm_labels = y[:, 1:].clone()
-        lm_labels[y[:, 1:] == pad_token_id] = -100
+        # pad_token_id = self.tokenizer.pad_token_id
+        # # source_ids, source_mask, y = batch["source_ids"], batch["source_mask"], batch["target_ids"]
+        # source_ids, source_mask, y = batch
+        # y_ids = y[:, :-1].contiguous()
+        # lm_labels = y[:, 1:].clone()
+        # lm_labels[y[:, 1:] == pad_token_id] = -100
+
+        # inputs = {
+        #     "input_ids": source_ids.to(device),
+        #     "attention_mask": source_mask.to(device),
+        #     "decoder_input_ids": y_ids.to(device),
+        #     "labels": lm_labels.to(device),
+        # }
+        # lm_labels = batch[1]# source_mask
+        # lm_labels_masked = lm_labels.clone()
+        # lm_labels_masked[lm_labels_masked == self.tokenizer.pad_token_id] = -100
 
         inputs = {
-            "input_ids": source_ids.to(device),
-            "attention_mask": source_mask.to(device),
-            "decoder_input_ids": y_ids.to(device),
-            "labels": lm_labels.to(device),
+            # "input_ids": batch[0].to(device),
+            # "decoder_input_ids": lm_labels.to(device),
+            # "labels": lm_labels_masked.to(device),
+            'input_ids':batch[0].to(device), 
+            'attention_mask':batch[1].to(device),
+            'decoder_input_ids':batch[2].to(device),
+            'decoder_attention_mask':batch[3].to(device),
         }
         return inputs
  
     def train_epoch(self, train_dataloader,epoch_number):
         self.tr_loss = 0
+        train_losses = []
 
         batch_iterator = tqdm(
             train_dataloader,
@@ -88,23 +96,37 @@ class BertTrainer(object):
             self.model.train()
            
             inputs = self._get_inputs_dict(batch)
+            decoder_input_ids = inputs['decoder_input_ids']
             outputs = self.model(**inputs)
-            loss = outputs[0]
-            current_loss = loss.item()
+            lm_logits = F.linear(outputs[0], self.model.config.shared.weight, bias=self.model.config.final_logits_bias)
+       
+            loss_fct = nn.CrossEntropyLoss(reduction="sum", ignore_index=self.model.config.pad_token_id)
+            loss = loss_fct(lm_logits.view(-1, self.model.config.vocab_size),
+                              decoder_input_ids.view(-1))
             
-            batch_iterator.set_description(
-                f"Epochs {epoch_number}/{self.args.epochs}. Running Loss: {current_loss:9.4f}"
-            )
-
-
+            
+            # # model outputs are always tuple in pytorch-transformers (see doc)
+            # loss = outputs[0]
+            # print(type(loss))
+            # # with open('ouput.txt','w') as f:
+            # #     f.write(str(outputs))
+            # # print('loss.item():',loss)
+            # current_loss = loss.item()
             if self.args.n_gpu > 1:
                 loss = loss.mean()
             if self.args.gradient_accumulation_steps > 1:
                 loss = loss / self.args.gradient_accumulation_steps
+            
+            batch_iterator.set_description(
+                f"Epochs {epoch_number}/{self.args.epochs}. Running Loss: {loss:9.4f}"
+            )
 
+
+            
+            train_losses.append(loss.detach().cpu())
             loss.backward()
 
-            self.tr_loss += loss.item()
+            # self.tr_loss += loss.item()
             self.nb_tr_steps += 1
             if (step + 1) % self.args.gradient_accumulation_steps == 0:
                 self.optimizer.step()
@@ -112,7 +134,7 @@ class BertTrainer(object):
                 self.optimizer.zero_grad()
                 self.iterations += 1
 
-        print(self.tr_loss)
+        print(train_losses)
 
     def train(self):
         train_features = convert_examples_to_features(
@@ -123,17 +145,26 @@ class BertTrainer(object):
         print("Batch size:", self.args.batch_size)
         print("Num of steps:", self.num_train_optimization_steps)
 
-        source_ids = torch.cat([f.source_ids for f in train_features],dim=0)
-        # source_ids = [f.source_ids for f in train_features]
+        input_ids = [f.input_ids for f in train_features]
+        attention_mask = [f.attention_mask for f in train_features]      
+        decoder_input_ids = [f.decoder_input_ids for f in train_features]
+        decoder_attention_mask = [f.decoder_attention_mask for f in train_features]
 
-        source_mask = torch.cat([f.source_mask for f in train_features], dim=0)       
-        target_ids = torch.cat([f.target_ids for f in train_features], dim=0)
+        padded_input_ids = torch.tensor(input_ids, dtype=torch.long)
+        padded_attention_mask = torch.tensor(attention_mask, dtype=torch.long)
+        padded_decoder_input_ids= torch.tensor(decoder_input_ids, dtype=torch.long)
+        padded_decoder_attention_mask= torch.tensor(decoder_attention_mask, dtype=torch.long)
 
-        # train_data = TensorDataset(
-        #     source_ids, source_mask, target_ids
-        # )
-        train_df=pd.DataFrame({'source_ids':source_ids, 'source_mask':source_mask, 'target_ids':target_ids})
-        train_data=MyDataset(train_df)
+        # source_mask = torch.cat([f.source_mask for f in train_features], dim=0)       
+        # target_ids = torch.cat([f.target_ids for f in train_features], dim=0)
+
+        train_data = TensorDataset(
+            padded_input_ids, padded_attention_mask, padded_decoder_input_ids,padded_decoder_attention_mask
+        )
+        # source_target_pair = [[source_ids[i], source_mask[i], target_ids[i]] for i in range(len(source_ids))]
+        # train_df=pd.DataFrame(source_target_pair, columns=["source_ids", "source_mask", "target_ids"])
+        # # pd.DataFrame({'source_ids':source_ids, 'source_mask':source_mask, 'target_ids':target_ids})
+        # train_data=MyDataset(train_df)
 
         train_sampler = RandomSampler(train_data)
         train_dataloader = DataLoader(

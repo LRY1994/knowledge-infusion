@@ -9,6 +9,7 @@ from sklearn import metrics
 from tabulate import tabulate
 from torch.utils.data import DataLoader, SequentialSampler, TensorDataset
 from tqdm import tqdm
+from torch import Tensor, nn
 from multiprocessing import Pool, cpu_count
 from .abstract_processor import convert_examples_to_features
 import logging
@@ -46,17 +47,26 @@ class BertEvaluator(object):
 
     def _get_inputs_dict(self, batch):
         device = self.device
-        pad_token_id = self.tokenizer.pad_token_id
-        source_ids, source_mask, y = batch["source_ids"], batch["source_mask"], batch["target_ids"]
-        y_ids = y[:, :-1].contiguous()
-        lm_labels = y[:, 1:].clone()
-        lm_labels[y[:, 1:] == pad_token_id] = -100
+        # pad_token_id = self.tokenizer.pad_token_id
+        # source_ids, source_mask, y = batch["source_ids"], batch["source_mask"], batch["target_ids"]
+        # y_ids = y[:, :-1].contiguous()
+        # lm_labels = y[:, 1:].clone()
+        # lm_labels[y[:, 1:] == pad_token_id] = -100
 
+        # inputs = {
+        #     "input_ids": source_ids.to(device),
+        #     "attention_mask": source_mask.to(device),
+        #     "decoder_input_ids": y_ids.to(device),
+        #     "labels": lm_labels.to(device),
+        # }
         inputs = {
-            "input_ids": source_ids.to(device),
-            "attention_mask": source_mask.to(device),
-            "decoder_input_ids": y_ids.to(device),
-            "labels": lm_labels.to(device),
+            # "input_ids": batch[0].to(device),
+            # "decoder_input_ids": lm_labels.to(device),
+            # "labels": lm_labels_masked.to(device),
+            'input_ids':batch[0].to(device), 
+            'attention_mask':batch[1].to(device),
+            'decoder_input_ids':batch[2].to(device),
+            'decoder_attention_mask':batch[3].to(device),
         }
         return inputs
 
@@ -71,12 +81,21 @@ class BertEvaluator(object):
             self.eval_examples, self.args.max_seq_length, self.tokenizer
         )
 
-        source_ids = torch.tensor([f.source_ids for f in eval_features], dtype=torch.long)
-        source_mask = torch.tensor([f.source_mask for f in eval_features], dtype=torch.long)       
-        target_ids = torch.tensor([f.target_ids for f in eval_features], dtype=torch.long)
+        input_ids = [f.input_ids for f in eval_features]
+        attention_mask = [f.attention_mask for f in eval_features]      
+        decoder_input_ids = [f.decoder_input_ids for f in eval_features]
+        decoder_attention_mask = [f.decoder_attention_mask for f in eval_features]
+
+        padded_input_ids = torch.tensor(input_ids, dtype=torch.long)
+        padded_attention_mask = torch.tensor(attention_mask, dtype=torch.long)
+        padded_decoder_input_ids= torch.tensor(decoder_input_ids, dtype=torch.long)
+        padded_decoder_attention_mask= torch.tensor(decoder_attention_mask, dtype=torch.long)
+
+        # source_mask = torch.cat([f.source_mask for f in train_features], dim=0)       
+        # target_ids = torch.cat([f.target_ids for f in train_features], dim=0)
 
         eval_data = TensorDataset(
-            source_ids, source_mask, target_ids
+            padded_input_ids, padded_attention_mask, padded_decoder_input_ids,padded_decoder_attention_mask
         )
 
         eval_sampler = SequentialSampler(eval_data)
@@ -93,19 +112,24 @@ class BertEvaluator(object):
         for batch in tqdm( eval_dataloader, desc="Evaluating", disable=silent): 
 
             inputs = self._get_inputs_dict(batch)
+            decoder_input_ids = inputs['decoder_input_ids']
+            
           
             with torch.no_grad():
                 outputs = self.model(**inputs)
-                loss = outputs[0]
-                eval_loss += loss.mean().item()
+                lm_logits = F.linear(outputs[0], self.model.shared.weight, bias=self.model.final_logits_bias)
+        
+                loss_fct = nn.CrossEntropyLoss(reduction="sum", ignore_index=self.model.config.pad_token_id)
+                loss = loss_fct(lm_logits.view(-1, self.model.config.vocab_size),
+                              decoder_input_ids.view(-1))
                 
-            loss = outputs[0]
+            
 
             if self.args.n_gpu > 1:
                 loss = loss.mean()
             if self.args.gradient_accumulation_steps > 1:
                 loss = loss / self.args.gradient_accumulation_steps
-            eval_loss += loss.item()         
+            eval_loss += loss      
             nb_eval_steps += 1
 
         

@@ -37,10 +37,12 @@ class InputExample(object):
 class InputFeatures(object):
     """A single set of features of data."""
 
-    def __init__(self, source_ids, source_mask, target_ids):
-        self.source_ids=source_ids
-        self.source_mask=source_mask
-        self.target_ids=target_ids
+    def __init__(self, input_ids, attention_mask, decoder_input_ids,decoder_attention_mask):
+        self.input_ids=input_ids
+        self.attention_mask=attention_mask
+        self.decoder_input_ids=decoder_input_ids
+        self.decoder_attention_mask=decoder_attention_mask
+        
 
 
 
@@ -102,6 +104,11 @@ def preprocess_data_bart(data,tokenizer,max_seq_length):
     input_text = data.input_text
     target_text = data.target_text
 
+    
+    tokens_input_text = tokenizer.tokenize(input_text)
+    tokens_target_text = tokenizer.tokenize(target_text)
+
+
     input_ids = tokenizer.batch_encode_plus(
         [input_text], max_length=max_seq_length, padding='max_length', return_tensors="pt", truncation=True
     )
@@ -109,11 +116,13 @@ def preprocess_data_bart(data,tokenizer,max_seq_length):
     target_ids = tokenizer.batch_encode_plus(
         [target_text], max_length=max_seq_length, padding='max_length', return_tensors="pt", truncation=True
     )
+    
 
     return {
-        "source_ids": input_ids["input_ids"].squeeze(),
-        "source_mask": input_ids["attention_mask"].squeeze(),
-        "target_ids": target_ids["input_ids"].squeeze(),
+        "input_ids": input_ids["input_ids"].squeeze().numpy().tolist(),
+        "attention_mask": input_ids["attention_mask"].squeeze().numpy().tolist(),
+        "decoder_input_ids": target_ids["input_ids"].squeeze().numpy().tolist(),
+        "decoder_attention_mask":target_ids["attention_mask"].squeeze().numpy().tolist(),
     }
     
 def convert_examples_to_features(
@@ -134,9 +143,11 @@ def convert_examples_to_features(
         tmp = preprocess_data_bart(example,tokenizer,max_seq_length)
         features.append(
             InputFeatures(
-                source_ids=tmp['source_ids'],
-                source_mask=tmp['source_mask'],
-                target_ids=tmp['target_ids'],
+                input_ids=tmp['input_ids'],
+                attention_mask=tmp['attention_mask'],
+                decoder_input_ids=tmp['decoder_input_ids'],
+                decoder_attention_mask=tmp['decoder_attention_mask'],
+
             )
         )
     return features

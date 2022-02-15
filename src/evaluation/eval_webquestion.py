@@ -16,6 +16,11 @@ from transformers import (
     AutoConfig,
     AutoModel,
     AutoTokenizer,
+    BartConfig,
+    BartForConditionalGeneration,
+    BartTokenizer,
+    
+
 )
 from transformers import get_linear_schedule_with_warmup as WarmupLinearSchedule
 
@@ -295,9 +300,8 @@ if __name__ == "__main__":
     print_args_as_table(args)
 
     processor = BioAsqProcessor(args.data_dir)
-    if args.tokenizer is None:
-        args.tokenizer = args.base_model
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
+    
+    tokenizer = BartTokenizer.from_pretrained("facebook/bart-large")
 
     for i in range(args.repeat_runs):
         print(f"Start the {i}th training.")
@@ -310,18 +314,16 @@ if __name__ == "__main__":
         torch.manual_seed(seed)
         args.best_model_dir = f"./temp/model_{seed}/"
         os.makedirs(args.best_model_dir, exist_ok=True)
+        model = BartForConditionalGeneration.from_pretrained("facebook/bart-large")
         if n_gpu > 0:
             torch.cuda.manual_seed_all(seed)
         if args.train_mode == "fusion":
             # args.base_model will be a folder of pre-trained models over partitions
-            config, model = load_fusion_adapter_model(args)
-        elif args.train_mode == "adapter":
-            # args.base_model will be a folder of a pre-trained model
-            config, model = load_adapter_model(args)
+            config, model = load_fusion_adapter_model(args,model)
         elif args.train_mode == "base":
             # use base bart model
-            config = AutoConfig.from_pretrained(args.base_model)
-            model = AutoModel.from_pretrained(args.base_model, from_tf=get_tf_flag(args))
+            config = BartConfig.from_pretrained("facebook/bart-large") #AutoConfig.from_pretrained(args.base_model)
+            model = model #AutoModel.from_pretrained(args.base_model, from_tf=get_tf_flag(args))
 
         
 
