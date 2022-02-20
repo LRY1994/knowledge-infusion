@@ -94,6 +94,11 @@ def get_args():
         default=1,
         help="Number of updates steps to accumulate before performing a backward/update pass",
     )
+    parser.add_argument('--max_input_length', type=int, default=32)
+    parser.add_argument('--max_output_length', type=int, default=20)
+    parser.add_argument('--num_beams', type=int, default=4)
+    parser.add_argument('--num_beams',  default=True)
+
 
     args = parser.parse_args()
     return args

@@ -24,7 +24,7 @@ python eval_webquestion.py \
 --batch_size 4 \
 --lr $LR   \
 --pretrain_epoch 0 \
---epochs 25 \
+--epochs 2 \
 --temperature $T \
 --cuda
 

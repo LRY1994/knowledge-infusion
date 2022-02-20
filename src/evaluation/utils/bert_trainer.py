@@ -87,27 +87,9 @@ class BertTrainer(object):
             decoder_input_ids = inputs['decoder_input_ids']
             _decoder_input_ids = shift_tokens_right(decoder_input_ids, self.model.config.pad_token_id)
           
-
-            
-            print('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
-            print(inputs['input_ids'].shape)#torch.Size([4, 32])
-            print(inputs['attention_mask'].shape)#torch.Size([4, 32])
-            print(_decoder_input_ids.shape)#torch.Size([4,36])
-            print(inputs['decoder_attention_mask'].shape)#torch.Size([4,36])
-
-            print(self.model)
-            outputs = self.model.model(
-                input_ids=inputs['input_ids'],#torch.Size([4, 32])
-                attention_mask=inputs['attention_mask'],#torch.Size([4, 32])
-                encoder_outputs=None,
-                decoder_input_ids=_decoder_input_ids,#torch.Size([4,36])
-                decoder_attention_mask=inputs['decoder_attention_mask'],#torch.Size([4,36])
-                decoder_cached_states=None,
-                use_cache=False 
-            )
+            outputs = self.model.model(**inputs)
           
-            print('cccccccccccccccccccccccccccccc')
-            print(outputs[0].shape)#torch.Size([4, 36, 50265])  应该是torch.Size([4, 36, 1024])
+            # print(outputs[0].shape)#torch.Size([4, 36, 1024]) 
             # print(self.model.shared.weight.shape)#torch.Size([50265, 1024])
             # print(self.final_logits_bias.shape)#torch.Size([1, 50265])
 
@@ -158,15 +140,11 @@ class BertTrainer(object):
         print("Number of examples: ", len(self.train_examples))
         print("Batch size:", self.args.batch_size)
         print("Num of steps:", self.num_train_optimization_steps)
-        
-        # print(train_features['decoder_input_ids'].shape)
-
+       
         padded_input_ids = torch.LongTensor(train_features['input_ids'])
         padded_attention_mask = torch.LongTensor(train_features['attention_mask'])
         padded_decoder_input_ids= torch.LongTensor(train_features['decoder_input_ids'])
         padded_decoder_attention_mask= torch.LongTensor(train_features['decoder_attention_mask'])
-
-        
 
         train_data = TensorDataset(
             padded_input_ids, 
