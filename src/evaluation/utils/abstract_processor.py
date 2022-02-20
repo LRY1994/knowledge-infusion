@@ -8,8 +8,9 @@ in May 2020
 """
 
 import csv
+from os import truncate
 import sys
-
+import json
 from nltk.tokenize import sent_tokenize
 
 from transformers import BartTokenizer, BartForConditionalGeneration
@@ -100,31 +101,7 @@ class BertProcessor(object):
                 lines.append(line)
             return lines
 
-def preprocess_data_bart(data,tokenizer,max_seq_length):
-    input_text = data.input_text
-    target_text = data.target_text
 
-    
-    tokens_input_text = tokenizer.tokenize(input_text)
-    tokens_target_text = tokenizer.tokenize(target_text)
-
-
-    input_ids = tokenizer.batch_encode_plus(
-        [input_text], max_length=max_seq_length, padding='max_length', return_tensors="pt", truncation=True
-    )
-
-    target_ids = tokenizer.batch_encode_plus(
-        [target_text], max_length=max_seq_length, padding='max_length', return_tensors="pt", truncation=True
-    )
-    
-
-    return {
-        "input_ids": input_ids["input_ids"].squeeze().numpy().tolist(),
-        "attention_mask": input_ids["attention_mask"].squeeze().numpy().tolist(),
-        "decoder_input_ids": target_ids["input_ids"].squeeze().numpy().tolist(),
-        "decoder_attention_mask":target_ids["attention_mask"].squeeze().numpy().tolist(),
-    }
-    
 def convert_examples_to_features(
     examples, max_seq_length, tokenizer, print_examples=False
 ):
@@ -136,20 +113,50 @@ def convert_examples_to_features(
     :param print_examples:
     :return: a list of InputBatch objects
     """
+    print ("Start tokenizing...")
 
-    features = []
-    
-    for (ex_index, example) in enumerate(examples):
-        tmp = preprocess_data_bart(example,tokenizer,max_seq_length)
-        features.append(
-            InputFeatures(
-                input_ids=tmp['input_ids'],
-                attention_mask=tmp['attention_mask'],
-                decoder_input_ids=tmp['decoder_input_ids'],
-                decoder_attention_mask=tmp['decoder_attention_mask'],
+    questions = [d.input_text.replace('\\n','')  for d in examples]
+  
+    answers = [d.target_text.replace('\\n','') for d in examples]
 
-            )
-        )
-    return features
+    # print(len(answers))
+    # answers, metadata = self.flatten(answers)
+    # if self.args.do_lowercase:
+    #     questions = [question.lower() for question in questions]
+    #     answers = [answer.lower() for answer in answers]
+    # if self.args.append_another_bos:
+    #     questions = ["<s> "+question for question in questions]
+    #     answers = ["<s> " +answer for answer in answers]
+    question_input = tokenizer.batch_encode_plus(questions,
+                                                padding='max_length',
+                                                max_length=32,
+                                                truncation=True
+                                                )
+    answer_input = tokenizer.batch_encode_plus(answers,                                           
+                                                padding=True,  
+                                                max_length=36,                                          
+                                                truncation=True
+                                                )
+
+    input_ids, attention_mask = question_input["input_ids"], question_input["attention_mask"]
+    decoder_input_ids, decoder_attention_mask = answer_input["input_ids"], answer_input["attention_mask"]
+
+    preprocessed_data = [input_ids, attention_mask,
+                                     decoder_input_ids, decoder_attention_mask,
+                                     ]
+    with open('train-barttokenized.json', "w") as f:
+        json.dump([input_ids, attention_mask,
+                    decoder_input_ids, decoder_attention_mask
+                    ], f)
+
+
+    return{
+        'input_ids':input_ids,
+        'attention_mask':attention_mask,
+        'decoder_input_ids':decoder_input_ids,
+        'decoder_attention_mask':decoder_attention_mask
+    }
+
+
 
 

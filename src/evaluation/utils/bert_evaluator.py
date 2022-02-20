@@ -36,13 +36,9 @@ class BertEvaluator(object):
                 self.eval_examples = self.eval_examples[:keep_num]
                 print(f"Reduce Training example number to {keep_num}")
         elif split == "dev":
-            self.eval_examples = self.processor.get_dev_examples(
-                args.data_dir, args.dev_file
-            )
+            self.eval_examples = self.processor.get_dev_examples()
         elif split == "test":
-            self.eval_examples = self.processor.get_test_examples(
-                args.data_dir, args.test_file
-            )
+            self.eval_examples = self.processor.get_test_examples()
         self.examples_ids = [example.guid for example in self.eval_examples]
 
     def _get_inputs_dict(self, batch):

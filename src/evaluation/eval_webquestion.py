@@ -283,9 +283,7 @@ if __name__ == "__main__":
     print("Device:", str(device).upper())
     print("Number of GPUs:", n_gpu)
     print("AMP:", args.amp)
-    if args.groups:
-        args.groups = [int(i) for i in args.groups.split(",")]
-        print("Groups:", args.groups)
+
     train_acc_list = []
     dev_acc_list = []
     test_acc_list = []
@@ -314,16 +312,16 @@ if __name__ == "__main__":
         torch.manual_seed(seed)
         args.best_model_dir = f"./temp/model_{seed}/"
         os.makedirs(args.best_model_dir, exist_ok=True)
-        model = BartForConditionalGeneration.from_pretrained("facebook/bart-large")
+        basemodel = BartForConditionalGeneration.from_pretrained("facebook/bart-large")
         if n_gpu > 0:
             torch.cuda.manual_seed_all(seed)
         if args.train_mode == "fusion":
             # args.base_model will be a folder of pre-trained models over partitions
-            config, model = load_fusion_adapter_model(args,model)
+            config, model = load_fusion_adapter_model(args,basemodel)
         elif args.train_mode == "base":
             # use base bart model
             config = BartConfig.from_pretrained("facebook/bart-large") #AutoConfig.from_pretrained(args.base_model)
-            model = model #AutoModel.from_pretrained(args.base_model, from_tf=get_tf_flag(args))
+            model = basemodel #AutoModel.from_pretrained(args.base_model, from_tf=get_tf_flag(args))
 
         
 

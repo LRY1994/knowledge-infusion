@@ -20,7 +20,7 @@ python eval_webquestion.py \
 --base_model $BASE_MODEL \
 --tokenizer $BASE_MODEL  \
 --model $MODEL  \
---max_seq_length 512   \
+--max_seq_length 50  \
 --batch_size 4 \
 --lr $LR   \
 --pretrain_epoch 0 \

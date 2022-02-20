@@ -33,7 +33,7 @@ class BioAsqProcessor(BertProcessor):
     def get_train_examples(self):
         return self._create_examples(self.train_df, set_type="train")
 
-    def get_dev_examples(self,):
+    def get_dev_examples(self):
         return self._create_examples(self.dev_df, set_type="dev")
 
     def get_test_examples(self):
