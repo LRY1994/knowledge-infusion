@@ -10,8 +10,7 @@ from torch import Tensor, nn
 from .abstract_processor import convert_examples_to_features
 from .bert_evaluator import BertEvaluator
 from transformers.modeling_bart import shift_tokens_right
-from transformers import T5ForConditionalGeneration, BartForConditionalGeneration
-from transformers.modeling_bart import shift_tokens_right
+
 class BertTrainer(object):
     def __init__(self, model, optimizer, processor, scheduler, tokenizer, args):
        
@@ -21,7 +20,7 @@ class BertTrainer(object):
         self.processor = processor
         self.scheduler = scheduler
         self.tokenizer = tokenizer
-        self.device = 'cuda'
+        self.device = args.device
         self.train_examples = self.processor.get_train_examples()
         if args.train_ratio < 1:
             keep_num = int(len(self.train_examples) * args.train_ratio) + 1
@@ -51,7 +50,7 @@ class BertTrainer(object):
         )
 
         self.iterations, self.nb_tr_steps, self.tr_loss = 0, 0, 0
-        self.best_dev_acc, self.unimproved_iters = 0, 0
+        self.best_dev_acc, self.unimproved_iters = -1, 0
         self.early_stop = False
 
     def _get_inputs_dict(self, batch):
@@ -74,7 +73,7 @@ class BertTrainer(object):
 
         batch_iterator = tqdm(
             train_dataloader,
-            desc=f"Running Epoch {epoch_number} of {self.args.epochs} ",
+            desc=f"Running Epoch {epoch_number+1} of {self.args.epochs} ",
             mininterval=0,
         )
        
@@ -168,12 +167,14 @@ class BertTrainer(object):
             dev_evaluator = BertEvaluator(
                 self.model, self.processor, self.tokenizer, self.args, split="dev"
             )
-            result = dev_evaluator.get_scores()[0]
+            results = dev_evaluator.get_scores()
+            print('aaaaaaaaaaaaaa' )
+            print(results)
 
             # Update validation results
-            if result["correct_ratio"] > self.best_dev_acc:
+            if results["correct_ratio"] > self.best_dev_acc:
                 self.unimproved_iters = 0
-                self.best_dev_acc = result["correct_ratio"]
+                self.best_dev_acc = results["correct_ratio"]
                 torch.save(self.model, self.args.best_model_dir + "model.bin")
             else:
                 self.unimproved_iters += 1

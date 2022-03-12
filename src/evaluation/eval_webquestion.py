@@ -6,6 +6,7 @@ from argparse import ArgumentParser
 from datetime import datetime
 from os import listdir
 from statistics import mean, stdev
+from xmlrpc.client import boolean
 
 import numpy as np
 import torch
@@ -30,8 +31,12 @@ from utils.bert_trainer import BertTrainer
 from utils.bioasq_processor import BioAsqProcessor
 from utils.common_utils import print_args_as_table
 
-wandb.init(project="webquestion")
 
+
+# try:
+    # wandb.init(project="webquestion")
+# except:
+#     wandb = None
 
 def get_args():
     parser = ArgumentParser(
@@ -39,13 +44,14 @@ def get_args():
     )
     parser.add_argument(
         "--train_mode",
-        default="fusion",
+        default="base",
         type=str,
         required=True,
-        help="three modes: fusion, adapter, base",
+        help="three modes:  adapter, base",
     )
     parser.add_argument("--model", default=None, type=str, required=True)
     parser.add_argument("--base_model", default=None, type=str, required=True)
+    parser.add_argument("--output_dir", default=None, type=str, required=True)
     parser.add_argument("--tokenizer", default=None, type=str, required=False)
     parser.add_argument("--cuda", action="store_true", help="to use gpu")
     parser.add_argument("--amp", action="store_true", help="use auto mixed precision")
@@ -67,6 +73,7 @@ def get_args():
     )
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--eval_batch_size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=0.00001)
     parser.add_argument("--groups", type=str, default=None, help="groups to be chosen")
 
@@ -97,8 +104,15 @@ def get_args():
     parser.add_argument('--max_input_length', type=int, default=32)
     parser.add_argument('--max_output_length', type=int, default=20)
     parser.add_argument('--num_beams', type=int, default=4)
-    parser.add_argument('--num_beams',  default=True)
 
+    parser.add_argument('--length_penalty', type=int, default=4)
+    parser.add_argument('--early_stopping', type=bool, default=True)
+    parser.add_argument('--repetition_penalty', type=int, default=4)
+    parser.add_argument('--do_sample', type=int, default=4)
+    parser.add_argument('--top_k', type=int, default=4)
+    parser.add_argument('--top_p', type=int, default=4)
+    parser.add_argument('--num_return_sequences', type=int, default=1)
+    parser.add_argument('--use_multiprocessed_decoding', type=bool, default=False)
 
     args = parser.parse_args()
     return args
@@ -108,9 +122,9 @@ def evaluate_split(model, processor, tokenizer, args, split="dev"):
     evaluator = BertEvaluator(model, processor, tokenizer, args, split, True)
     result = evaluator.get_scores(silent=True)
     split_result = {}
-    for k, v in result[0].items():
+    for k, v in result.items():
         split_result[f"{split}_{k}"] = v
-    return split_result, result[1]
+    return split_result
 
 
 def get_tf_flag(args):
@@ -299,12 +313,12 @@ if __name__ == "__main__":
     
     args.best_model_dir = f"./temp/model_{timestamp_str}/"
     # Record config on wandb
-    wandb.config.update(args)
+    # wandb.config.update(args)
     print_args_as_table(args)
 
     processor = BioAsqProcessor(args.data_dir)
     
-    tokenizer = BartTokenizer.from_pretrained("facebook/bart-large")
+    tokenizer = BartTokenizer.from_pretrained(args.base_model)
 
     for i in range(args.repeat_runs):
         print(f"Start the {i}th training.")
@@ -317,7 +331,7 @@ if __name__ == "__main__":
         torch.manual_seed(seed)
         args.best_model_dir = f"./temp/model_{seed}/"
         os.makedirs(args.best_model_dir, exist_ok=True)
-        basemodel = BartForConditionalGeneration.from_pretrained("facebook/bart-large")
+        basemodel = BartForConditionalGeneration.from_pretrained(args.base_model)
         if n_gpu > 0:
             torch.cuda.manual_seed_all(seed)
         if args.train_mode == "fusion":
@@ -325,7 +339,7 @@ if __name__ == "__main__":
             config, model = load_fusion_adapter_model(args,basemodel)
         elif args.train_mode == "base":
             # use base bart model
-            config = BartConfig.from_pretrained("facebook/bart-large") #AutoConfig.from_pretrained(args.base_model)
+            config = BartConfig.from_pretrained(args.base_model) #AutoConfig.from_pretrained(args.base_model)
             model = basemodel #AutoModel.from_pretrained(args.base_model, from_tf=get_tf_flag(args))
 
         
@@ -344,27 +358,27 @@ if __name__ == "__main__":
         model = torch.load(args.best_model_dir + "model.bin")
 
         train_result = evaluate_split(model, processor, tokenizer, args, split="train")
-        train_result[0]["run_num"] = i
-        wandb.log(train_result[0])  # Record Dev Result
-        train_acc_list.append(train_result[0]["train_accuracy"])
+        train_result["run_num"] = i
+        # wandb.log(train_result)  # Record Dev Result
+        train_acc_list.append(train_result["train_correct_ratio"])
 
         dev_result = evaluate_split(model, processor, tokenizer, args, split="dev")
-        dev_result[0]["run_num"] = i
-        wandb.log(dev_result[0])  # Record Dev Result
-        dev_acc_list.append(dev_result[0]["dev_accuracy"])
+        dev_result["run_num"] = i
+        # wandb.log(dev_result)  # Record Dev Result
+        dev_acc_list.append(dev_result["dev_correct_ratio"])
 
         test_result = evaluate_split(model, processor, tokenizer, args, split="test")
-        test_result[0]["run_num"] = i
-        wandb.log(test_result[0])  # Record Testing Result
-        test_acc_list.append(test_result[0]["test_accuracy"])
+        test_result["run_num"] = i
+        # wandb.log(test_result)  # Record Testing Result
+        test_acc_list.append(test_result["test_correct_ratio"])
 
         if (
-            test_result[0]["test_accuracy"] < 0.86
+            test_result["test_correct_ratio"] < 0.86
         ):  # keep the models with excellent performance
             shutil.rmtree(args.best_model_dir)#递归地删除文件
         else:
             print(f"Saving model to {args.best_model_dir}.")
-            print(f"test_accuracy of {test_result[0]['test_accuracy']}.")
+            print(f"correct_ratio of {test_result['test_correct_ratio']}.")
 
     result = {}
     result["seed_list"] = seed_list
@@ -374,4 +388,4 @@ if __name__ == "__main__":
     result["dev_acc_std"] = stdev(dev_acc_list)  # average of the ten runs
     result["test_acc_mean"] = mean(test_acc_list)  # average of the ten runs
     result["test_acc_std"] = stdev(test_acc_list)  # average of the ten runs
-    wandb.config.update(result)
+    # wandb.config.update(result)

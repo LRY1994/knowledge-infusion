@@ -1,0 +1,33 @@
+to_predict
+	output
+	target
+what does jamaican people speak?
+	[1]
+	Jamaican Creole English Language	Jamaican English
+what did james k polk do before he was president?
+	what did james k polk do before he was president?
+	Lawyer
+what is the oregon ducks 2012 football schedule?
+	what is the oregon Ducks 2012 football schedule?
+	University of Oregon
+who plays ken barlow in coronation street?
+	who plays ken barlow in coronation street?
+	Tony Warren
+what happened after mr. sugihara died?
+	what happened after mr. sugihara died
+	Yaotsu
+who did mozart write his four horn concertos for?
+	who did mozart write his four horn concertos for?
+	wolfgang amadeus mozart used story by pierre beaumarchais
+where is jamarcus russell from?
+	where is jamarcus russell from?
+	Mobile
+where was george washington carver from?
+	where was george washington carver from?
+	Diamond
+what else did ben franklin invent?
+	[1]
+	Lightning rod	Franklin stove	Bifocals	Glass harmonica
+who was richard nixon married to?
+	who was richard nixon married to?
+	Pat Nixon

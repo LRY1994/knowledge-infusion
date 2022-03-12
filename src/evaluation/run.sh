@@ -2,18 +2,15 @@ DATASET="WebQuestion"
 # TriviaQA
 # NaturalQuestions
 # SQuAD2
-
-MODEL_DIR="../train_adpter/relation_prompt/checkpoints/"
-DATA_DIR="../datasets/WebQuestion/splitted/" 
-BASE_MODEL="facebook/bart-large"
+MODEL_DIR="src/train_adpter/relation_prompt/checkpoints/"
+DATA_DIR="src/datasets/WebQuestion/splitted/"
+BASE_MODEL="facebook/bart-base"
 MODEL="WebQuestion"
 T=1
 LR=1e-5
-# TRAIN_MODE="fusion"
 TRAIN_MODE="base"
-
-    
-python eval_webquestion.py \
+OUTPUT_DIR="output"
+python src/evaluation/eval_webquestion.py \
 --train_mode $TRAIN_MODE \
 --model_dir $MODEL_DIR \
 --data_dir $DATA_DIR  \
@@ -22,9 +19,11 @@ python eval_webquestion.py \
 --model $MODEL  \
 --max_seq_length 50  \
 --batch_size 4 \
+--eval_batch_size 4 \
 --lr $LR   \
 --pretrain_epoch 0 \
 --epochs 2 \
+--repeat_runs 2 \
 --temperature $T \
---cuda
-
+--output_dir  $OUTPUT_DIR  \
+--cuda \

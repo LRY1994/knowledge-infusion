@@ -18,7 +18,8 @@ warnings.filterwarnings("ignore")
 
 class BertEvaluator(object):
     def __init__(
-        self, model, processor, tokenizer, args, split="dev", dump_predictions=False
+        self, model, processor, tokenizer, args, split="dev", dump_predictions=False,
+        
     ):
         self.args = args
         self.model = model
@@ -26,20 +27,9 @@ class BertEvaluator(object):
         self.tokenizer = tokenizer
         self.split = split
         self.dump_predictions = dump_predictions
+        self.device = args.device
+        self.eval_examples = self.processor.get_dev_examples()
 
-        if split == "train":
-            self.eval_examples = self.processor.get_train_examples(
-                args.data_dir, args.train_file
-            )
-            if args.train_ratio < 1:
-                keep_num = int(len(self.eval_examples) * args.train_ratio) + 1
-                self.eval_examples = self.eval_examples[:keep_num]
-                print(f"Reduce Training example number to {keep_num}")
-        elif split == "dev":
-            self.eval_examples = self.processor.get_dev_examples()
-        elif split == "test":
-            self.eval_examples = self.processor.get_test_examples()
-        # self.examples_ids = [example.guid for example in self.eval_examples]
 
     def _get_inputs_dict(self, batch):
         device = self.device
@@ -118,17 +108,19 @@ class BertEvaluator(object):
         eval_loss = eval_loss / nb_eval_steps
         results["eval_loss"] = eval_loss
 
-        output_eval_file = os.path.join(self.args.output_dir, "eval_results.txt")
-        with open(output_eval_file, "w") as writer:
-            for key in sorted(results.keys()):
-                writer.write("{} = {}\n".format(key, str(results[key])))
+        # output_eval_file = os.path.join(self.args.output_dir, "eval_results.txt")
+        # with open(output_eval_file, "w") as writer:
+        #     for key in sorted(results.keys()):
+        #         writer.write("{} = {}\n".format(key, str(results[key])))
        
+        eval_data = self.processor.get_dev_examples()
         result , preds = self.predict(eval_data, output_dir='eval/')
-        results.update(result)# correct_num, correct_ratio
-        result = self.compute_metrics(eval_data["target_text"].tolist(), preds, **kwargs)
+        results.update(result)# {correct_num, correct_ratio}
+        target_text = [d.target_text.replace('\\n','') for d in eval_data]
+        result = self.compute_metrics(target_text, preds, **kwargs)
         results.update(result)# metrics
         
-        return results
+        return results #{eval_loss,correct_num,correct_ratio}
             
 
     def predict(self, pred_data, output_dir=None, suffix=None, verbose=True, silent=False):
@@ -144,9 +136,10 @@ class BertEvaluator(object):
             preds: A python list of the generated sequences.
         """  # noqa: ignore flake8"
 
-        to_predict = pred_data["input_text"].tolist()
-        target_predict = pred_data["target_text"].tolist()
 
+        
+        to_predict = [d.input_text.replace('\\n','') for d in pred_data]
+        target_predict = [d.target_text.replace('\\n','') for d in pred_data]
         assert len(to_predict)==len(target_predict)
 
         
@@ -163,10 +156,10 @@ class BertEvaluator(object):
         for batch in tqdm(
             [to_predict[i : i + self.args.eval_batch_size] for i in range(0, len(to_predict), self.args.eval_batch_size)],
             desc='Predicting', 
-            disable=self.args.silent, 
+            disable=silent, 
             mininterval=0,):
             
-            input_ids = self.encoder_tokenizer.batch_encode_plus(
+            input_ids = self.tokenizer.batch_encode_plus(
                 batch,
                 max_length=self.args.max_seq_length,
                 padding=True,
@@ -198,7 +191,7 @@ class BertEvaluator(object):
                         p.imap(self._decode, all_outputs, chunksize=self.args.multiprocessing_chunksize),
                         total=len(all_outputs),
                         desc="Decoding outputs",
-                        disable=self.args.silent,
+                        disable=silent,
                     )
                 )           
         else:
@@ -230,13 +223,9 @@ class BertEvaluator(object):
         else:
             outputs = outputs
 
-        return {
-            result:{
-                correct_num:correct_num,
-                correct_ratio: correct_ratio, 
-            },          
-            outputs:outputs
-        }
+        result = { 'correct_num':correct_num, 'correct_ratio':correct_ratio }
+        return  result, outputs
+        
 
 
     def _decode(self, output_id):
